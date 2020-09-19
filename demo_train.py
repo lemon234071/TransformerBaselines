@@ -17,7 +17,7 @@ from agents.bert_agents.soft_masked_bert.data_process import get_datasets
 # torch.backends.cudnn.enabled = True
 # torch.backends.cudnn.benchmark = True
 
-logging.basicConfig(level=logging.INFO, format='\n %(asctime)s - %(levelname)s - %(message)s')  # - %(name)s
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')  # - %(name)s
 logger = logging.getLogger(__file__)
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -61,11 +61,12 @@ def main():
     best_loss = 10000
     for e in range(opt.epochs):
         trainer.train(e)
-        val_loss = trainer.evaluate(e)
+        val_loss = trainer.evaluate(e, "valid")
         if best_loss > val_loss:
             best_loss = val_loss
             trainer.save('best_model.pt')
             logger.info('Best val loss {} at epoch {}'.format(best_loss, e))
+            test_loss = trainer.evaluate(e, "test")
 
         trainer.load('best_model.pt')
         # for i in trainer.inference(val):

@@ -49,7 +49,7 @@ class ScheduledOptim():
     #         np.power(self.n_current_steps, -0.5),
     #         np.power(self.n_warmup_steps, -1.5) * self.n_current_steps])
 
-    def _learning_rate(self):
+    def learning_rate(self):
         """Returns the current learning rate."""
         if self._learning_rate_decay_fn is None:
             return self.init_lr
@@ -59,7 +59,7 @@ class ScheduledOptim():
     def _update_learning_rate(self):
         ''' Learning rate scheduling per step '''
 
-        lr = self._learning_rate()
+        lr = self.learning_rate()
         for param_group in self._optimizer.param_groups:
             param_group['lr'] = lr
 

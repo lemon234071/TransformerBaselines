@@ -14,17 +14,20 @@ def build_dataset(dataset, tokenizer):
     for line in dataset:
         seq = [tokenizer.convert_tokens_to_ids(tokenizer.tokenize(x))
                for x in line.split("\t")]
-        input_seq, output_seq = seq[0], seq[1]
+        input_seq = [tokenizer.cls_token_id] + seq[0] + [tokenizer.sep_token_id]
+        output_seq = [tokenizer.cls_token_id] + seq[1] + [tokenizer.sep_token_id]
         assert len(input_seq) == len(output_seq)
+        input_mask = [1 for _ in range(len(input_seq))]
         label = [int(c1 != c2) for c1, c2 in zip(input_seq, output_seq)]
 
-        instance = {"pad_input": input_seq, "pad_output": output_seq, "pad_label": label}
-        for k in instance.keys():
-            instances[k].append([tokenizer.cls_token_id] + instance[k] + [tokenizer.sep_token_id])
+        instances["pad_input"].append(input_seq)
+        instances["pad_input_mask"].append(input_mask)
+        instances["pad_ouput"].append(output_seq)
+        instances["pad_label"].append(label)
     return instances
 
 
-def collate(dataset, pad_id, batch_first=False):
+def collate(dataset, pad_id, batch_first=True):
     logger.info("Pad inputs and convert to Tensor")
     tensor_dataset = []
     for input_name in dataset.keys():

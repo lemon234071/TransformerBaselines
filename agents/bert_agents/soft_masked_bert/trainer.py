@@ -1,4 +1,7 @@
 import os
+import sys
+import time
+import math
 import tqdm
 import logging
 
@@ -12,7 +15,8 @@ from agents.optim_schedule import ScheduledOptim
 from .soft_masked_bert import SoftMaskedBert
 from .data_utils import build_dataset, collate
 
-BERT_MODEL = 'bert-base-uncased'
+# BERT_MODEL = 'bert-base-uncased'
+BERT_MODEL = 'bert-base-chinese'
 
 logger = logging.getLogger(__file__)
 
@@ -60,11 +64,12 @@ class SoftMaskedBertTrainer(object):
         # _optimizer = optim.Adam(self.model.parameters(), lr=opt.lr, weight_decay=opt.weight_decay)
         _optimizer = _get_optimizer(self.model, opt.learning_rate)
         self.optim_schedule = ScheduledOptim(opt, _optimizer)
+        self.gradient_accumulation_steps = opt.gradient_accumulation_steps
 
-        self.criterion_c = nn.NLLLoss()
-        self.criterion_d = nn.BCELoss()
+        self.criterion_c = nn.NLLLoss(ignore_index=self.tokenizer.pad_token_id)
+        self.criterion_d = nn.BCELoss(reduction="none")
         self.gama = opt.gama
-        self.log_freq = opt.report_every
+        self.report_every = opt.report_every
 
         self._dataset = {}
         self._dataloader = {}
@@ -80,15 +85,15 @@ class SoftMaskedBertTrainer(object):
                                              num_workers=self.opt.num_workers,
                                              shuffle=(k == "train"))
 
-    def train(self, epoch):
+    def train(self, epoch, data_type="train"):
         self.model.train()
-        return self.iteration(epoch, self._dataloader["train"])
+        return self.iteration(epoch, self._dataloader[data_type])
 
-    def evaluate(self, epoch):
+    def evaluate(self, epoch, data_type="valid"):
         self.model.eval()
-        return self.iteration(epoch, self._dataloader["valid"], train=False)
+        return self.iteration(epoch, self._dataloader[data_type], data_type=data_type)
 
-    def inference(self, data_loader):
+    def infer(self, data_loader):
         self.model.eval()
         out_put = []
         data_loader = tqdm.tqdm(enumerate(data_loader),
@@ -107,7 +112,7 @@ class SoftMaskedBertTrainer(object):
     def save(self, file_path):
         torch.save(self.model.cpu(), file_path)
         self.model.to(self.device)
-        print('Model save {}'.format(file_path))
+        logger.info('Model save {}'.format(file_path))
 
     def load(self, file_path):
         if not os.path.exists(file_path):
@@ -115,8 +120,8 @@ class SoftMaskedBertTrainer(object):
         self.model = torch.load(file_path)
         self.model.to(self.device)
 
-    def iteration(self, epoch, data_loader, train=True):
-        str_code = "train" if train else "val"
+    def iteration(self, epoch, data_loader, data_type="train"):
+        str_code = data_type
 
         # Setting the tqdm progress bar
         data_loader = tqdm.tqdm(enumerate(data_loader),
@@ -124,55 +129,55 @@ class SoftMaskedBertTrainer(object):
                                 total=len(data_loader),
                                 bar_format="{l_bar}{r_bar}")
 
-        avg_loss = 0.0
-        # total_correct = 0
-        total_element = 0
-        c_correct = 0
-        d_correct = 0
-
-        for i, batch in data_loader:
+        stats = Statistics()
+        for step, batch in data_loader:
             # 0. batch_data will be sent into the device(GPU or cpu)
-            data = {key: value.to(self.device) for key, value in data.items()}
-            input_ids, input_mask, token_type_ids, labels = tuple(
+            # data = {key: value.to(self.device) for key, value in data.items()}
+            input_ids, input_mask, output_ids, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
-            out, prob = self.model(data["input_ids"], data["input_mask"],
-                                   data["segment_ids"])  # prob [batch_size, seq_len, 1]
-            prob = prob.reshape(-1, prob.shape[1])
-            loss_d = self.criterion_d(prob, data['label'].float())
-            loss_c = self.criterion_c(out.transpose(1, 2), data["output_ids"])
-            loss = self.gama * loss_c + (1 - self.gama) * loss_d
+            d_scores, c_scores = self.model(input_ids, input_mask)  # prob [batch_size, seq_len, 1]
+            d_scores = d_scores.squeeze(dim=-1)
+            loss_d = self.criterion_d(d_scores, labels.float())
+            label_mask = labels.ne(-1)
+            loss_d = (loss_d * label_mask).sum() / label_mask.float().sum()
+            loss_c = self.criterion_c(c_scores.view(-1, c_scores.size(-1)), output_ids.view(-1))
+            loss = (1 - self.gama) * loss_d + self.gama * loss_c
 
-            if train:
-                self.optim_schedule.zero_grad()
+            if data_type == "train":
                 loss.backward(retain_graph=True)
-                self.optim_schedule.step()
+                if step % self.gradient_accumulation_steps == 0:
+                    self.optim_schedule.step()
+                    self.optim_schedule.zero_grad()
 
-            # correct = out.argmax(dim=-1).eq(data["output_ids"]).sum().item()
-            out = out.argmax(dim=-1)
-            c_correct += sum([out[i].equal(data['output_ids'][i]) for i in range(len(out))])
-            prob = torch.round(prob).long()
-            d_correct += sum([prob[i].equal(data['label'][i]) for i in range(len(prob))])
+            # sta
+            self._stats(stats, loss.item(), d_scores, labels, c_scores, output_ids)
+            if data_type == "train" and self.report_every > 0 and step % self.report_every == 0:
+                post_fix = {
+                    "epoch": epoch,
+                    "iter": step,
+                    "lr": self.optim_schedule.learning_rate()
+                }
+                post_fix.update(stats.report())
+                data_loader.write(
+                    "\n"+str({k: (round(v, 5) if isinstance(v, float) else v) for k, v in post_fix.items()}))
 
-            avg_loss += loss.item()
-            #     total_correct += c_correct
-            #     # total_element += data["label"].nelement()
-            total_element += len(data)
+        logger.info("Epoch{}_{}, ".format(epoch, str_code) +
+                    "avg_loss: ".format(stats.xent()) +
+                    "d_acc: {}, c_acc: {}".format(round(stats.accuracy()[0], 2), round(stats.accuracy()[1], 2))
+                    )
+        return stats.xent()
 
-            post_fix = {
-                "epoch": epoch,
-                "iter": i,
-                "avg_loss": avg_loss / (i + 1),
-                "d_acc": d_correct / total_element,
-                "c_acc": c_correct / total_element
-            }
+    def _stats(self, stats, loss, d_scores, label, c_scores, target):
+        c_pred = c_scores.argmax(dim=-1)
+        non_padding = target.ne(self.tokenizer.pad_token_id)
+        c_num_correct = c_pred.eq(target).masked_select(non_padding).sum().item()
+        num_non_padding = non_padding.sum().item()
 
-            if i % self.log_freq == 0:
-                data_loader.write(str(post_fix))
+        d_pred = torch.round(d_scores).long()
+        d_num_correct = d_pred.eq(label).masked_select(non_padding).sum().item()
 
-        print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len(data_loader), "d_acc=",
-              d_correct / total_element, "c_acc", c_correct / total_element)
-        return avg_loss / len(data_loader)
+        stats.update(loss * num_non_padding, c_num_correct, d_num_correct, num_non_padding)
 
 
 def _get_optimizer(model, learning_rate):
@@ -185,3 +190,107 @@ def _get_optimizer(model, learning_rate):
                     any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
 
     return optim.Adam(optimizer_grouped_parameters, lr=learning_rate)
+
+
+class Statistics(object):
+    """
+    Accumulator for loss statistics.
+    Currently calculates:
+
+    * accuracy
+    * perplexity
+    * elapsed time
+    """
+
+    def __init__(self, loss=0, n_words=0, n_correct=0):
+        self.loss = loss
+        self.n_words = n_words
+        self.c_n_correct = n_correct
+        self.d_n_correct = 0
+        self.n_src_words = 0
+        self.start_time = time.time()
+
+        self.reset()
+
+    def reset(self):
+        self.steps_loss = 0
+        self.steps_words = 0
+        self.steps_c_n_correct = 0
+        self.steps_d_n_correct = 0
+
+    def update(self, loss, c_num_correct, d_num_correct, num_non_padding):
+        """
+        Update statistics by suming values with another `Statistics` object
+
+        Args:
+            stat: another statistic object
+            update_n_src_words(bool): whether to update (sum) `n_src_words`
+                or not
+        """
+        self.steps_loss += loss
+        self.steps_c_n_correct += c_num_correct
+        self.steps_d_n_correct += d_num_correct
+        self.steps_words += num_non_padding
+
+        self.loss += loss
+        self.c_n_correct += c_num_correct
+        self.d_n_correct += d_num_correct
+        self.n_words += num_non_padding
+
+    def report(self):
+        output = {"loss": self.steps_loss / self.steps_words,
+                  "d_acc": 100 * (self.steps_d_n_correct / self.n_words),
+                  "c_acc": 100 * (self.steps_c_n_correct / self.n_words),
+                  "elapsed_time": self.elapsed_time()}
+        self.reset()
+        return output
+
+    def accuracy(self):
+        """ compute accuracy """
+        return 100 * (self.d_n_correct / self.n_words), 100 * (self.c_n_correct / self.n_words)
+
+    def xent(self):
+        """ compute cross entropy """
+        return self.loss / self.n_words
+
+    def ppl(self):
+        """ compute perplexity """
+        return math.exp(min(self.loss / self.n_words, 100))
+
+    def elapsed_time(self):
+        """ compute elapsed time """
+        return time.time() - self.start_time
+
+    # def output(self, step, num_steps, learning_rate, start):
+    #     """Write out statistics to stdout.
+    #
+    #     Args:
+    #        step (int): current step
+    #        n_batch (int): total batches
+    #        start (int): start time of step.
+    #     """
+    #     t = self.elapsed_time()
+    #     step_fmt = "%2d" % step
+    #     if num_steps > 0:
+    #         step_fmt = "%s/%5d" % (step_fmt, num_steps)
+    #     logger.info(
+    #         ("Step %s; acc: %6.2f; ppl: %5.2f; xent: %4.2f; " +
+    #          "lr: %7.7f; %3.0f/%3.0f tok/s; %6.0f sec")
+    #         % (step_fmt,
+    #            self.accuracy(),
+    #            self.ppl(),
+    #            self.xent(),
+    #            learning_rate,
+    #            self.n_src_words / (t + 1e-5),
+    #            self.n_words / (t + 1e-5),
+    #            time.time() - start))
+    #     sys.stdout.flush()
+    #
+    # def log_tensorboard(self, prefix, writer, learning_rate, step):
+    #     """ display statistics to tensorboard """
+    #     t = self.elapsed_time()
+    #     writer.add_scalar(prefix + "/xent", self.xent(), step)
+    #     writer.add_scalar(prefix + "/ppl", self.ppl(), step)
+    #     writer.add_scalar(prefix + "/accuracy", self.accuracy(), step)
+    #     writer.add_scalar(prefix + "/tgtper", self.n_words / t, step)
+    #     writer.add_scalar(prefix + "/lr", learning_rate, step)

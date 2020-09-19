@@ -12,12 +12,11 @@ class BiGRU(nn.Module):
         super(BiGRU, self).__init__()
         self.rnn = nn.GRU(embedding_size, hidden, num_layers=n_layers,
                           bidirectional=True, dropout=dropout, batch_first=True)
-        self.sigmoid = nn.Sigmoid()
-        self.linear = nn.Linear(hidden*2, 1)
+        self.cls = nn.Sequential(nn.Linear(hidden*2, 1), nn.Sigmoid())
 
     def forward(self, x):
-        out, _ = self.rnn(x)
-        prob = self.sigmoid(self.linear(out))
+        rnn_out, _ = self.rnn(x)
+        prob = self.cls(rnn_out)
         return prob
 
 

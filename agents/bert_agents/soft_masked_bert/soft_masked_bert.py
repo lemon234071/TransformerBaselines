@@ -28,28 +28,28 @@ class SoftMaskedBert(nn.Module):
 
         mask_token_id = torch.tensor([[tokenizer.mask_token_id]]).to(device)
         self.mask_e = self.embedding(mask_token_id)
-        self.linear = nn.Linear(embedding_size, self.config.vocab_size)
+        self.generator = nn.Sequential(nn.Linear(embedding_size, self.config.vocab_size),
+                                       nn.LogSoftmax(dim=-1))
 
-    def forward(self, input_ids, input_mask, segment_ids):
-        e = self.embedding(input_ids=input_ids, token_type_ids=segment_ids)
+    def forward(self, input_ids, input_mask, position_ids=None, token_type_ids=None):
+        e = self.embedding(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
         p = self.detector(e)
         soft_mask_e = p * self.mask_e + (1 - p) * e
 
-        _, _, _, _, \
-        _, \
+        extended_attention_mask, \
         head_mask, \
         encoder_hidden_states, \
         encoder_extended_attention_mask = self._init_inputs(input_ids, input_mask)
+
         h = self.corrector(soft_mask_e,
-                           attention_mask=encoder_extended_attention_mask,
+                           attention_mask=extended_attention_mask,
                            head_mask=head_mask,
                            encoder_hidden_states=encoder_hidden_states,
                            encoder_attention_mask=encoder_extended_attention_mask)
         h = h[0] + e
 
-        logits = self.linear(h)
-        out = logits.softmax(dim=-1)
-        return out, p
+        log_probs = self.generator(h)
+        return p, log_probs
 
     def _init_inputs(self,
                      input_ids=None,
@@ -146,17 +146,13 @@ class SoftMaskedBert(nn.Module):
                 head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
                 head_mask = head_mask.expand(self.config.num_hidden_layers, -1, -1, -1, -1)
             elif head_mask.dim() == 2:
-                head_mask = (
-                    head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)
-                )  # We can specify head_mask for each layer
-            head_mask = head_mask.to(
-                dtype=next(self.parameters()).dtype
-            )  # switch to fload if need + fp16 compatibility
+                head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)  # We can specify head_mask for each layer
+            assert head_mask.dim() == 5, f"head_mask.dim != 5, instead {head_mask.dim()}"
+            head_mask = head_mask.to(dtype=next(self.parameters()).dtype)  # switch to fload if need + fp16 compatibility
         else:
             head_mask = [None] * self.config.num_hidden_layers
 
-        return input_ids, position_ids, token_type_ids, inputs_embeds, \
-               extended_attention_mask, head_mask, encoder_hidden_states, encoder_extended_attention_mask
+        return extended_attention_mask, head_mask, encoder_hidden_states, encoder_extended_attention_mask
 
 # if __name__ == "__main__":
 #     config = BertConfig.from_pretrained('../data/chinese_wwm_pytorch/bert_config.json')
