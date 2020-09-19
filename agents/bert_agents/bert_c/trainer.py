@@ -9,10 +9,9 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader, TensorDataset
-from transformers import BertTokenizer, BertModel, BertConfig
+from transformers import BertTokenizer, BertModel, BertConfig, BertForTokenClassification
 
 from agents.optim_schedule import ScheduledOptim
-from .soft_masked_bert import SoftMaskedBert
 from .data_utils import build_dataset, collate
 
 # BERT_MODEL = 'bert-base-uncased'
@@ -21,7 +20,7 @@ BERT_MODEL = 'bert-base-chinese'
 logger = logging.getLogger(__file__)
 
 
-class SoftMaskedBertTrainer(object):
+class BertTrainer(object):
 
     @classmethod
     def add_cmdline_args(cls, argparser):
@@ -55,7 +54,9 @@ class SoftMaskedBertTrainer(object):
         self.device = device
         self.tokenizer = BertTokenizer.from_pretrained(opt.vocab_path if opt.vocab_path else opt.checkpoint,
                                                        do_lower_case=True)
-        self.model = SoftMaskedBert(opt, self.tokenizer, device).to(device)
+        self.config = BertConfig.from_pretrained(BERT_MODEL)
+        self.config.num_labels = self.config.vocab_size
+        self.model = BertForTokenClassification.from_pretrained(BERT_MODEL, config=self.config).to(device)
 
         # if torch.cuda.device_count() > 1:
         #     print("Using %d GPUS for train" % torch.cuda.device_count())
@@ -65,10 +66,6 @@ class SoftMaskedBertTrainer(object):
         _optimizer = _get_optimizer(self.model, opt.learning_rate)
         self.optim_schedule = ScheduledOptim(opt, _optimizer)
         self.gradient_accumulation_steps = opt.gradient_accumulation_steps
-
-        self.criterion_c = nn.NLLLoss(ignore_index=self.tokenizer.pad_token_id)
-        self.criterion_d = nn.BCELoss(reduction="none")
-        self.gama = opt.gama
         self.report_every = opt.report_every
 
         self._dataset = {}
@@ -136,13 +133,7 @@ class SoftMaskedBertTrainer(object):
             input_ids, input_mask, output_ids, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
-            d_scores, c_scores = self.model(input_ids, input_mask)  # prob [batch_size, seq_len, 1]
-            d_scores = d_scores.squeeze(dim=-1)
-            loss_d = self.criterion_d(d_scores, labels.float())
-            label_mask = labels.ne(-1)
-            loss_d = (loss_d * label_mask).sum() / label_mask.float().sum()
-            loss_c = self.criterion_c(c_scores.view(-1, c_scores.size(-1)), output_ids.view(-1))
-            loss = (1 - self.gama) * loss_d + self.gama * loss_c
+            loss, logits = self.model(input_ids, input_mask, labels=output_ids)  # prob [batch_size, seq_len, 1]
 
             if data_type == "train":
                 loss.backward(retain_graph=True)
@@ -151,7 +142,7 @@ class SoftMaskedBertTrainer(object):
                     self.optim_schedule.zero_grad()
 
             # sta
-            self._stats(stats, loss.item(), d_scores, labels, c_scores, output_ids)
+            self._stats(stats, loss.item(), logits.softmax(dim=-1), output_ids)
             if data_type == "train" and self.report_every > 0 and step % self.report_every == 0:
                 post_fix = {
                     "epoch": epoch,
@@ -160,7 +151,7 @@ class SoftMaskedBertTrainer(object):
                 }
                 post_fix.update(stats.report())
                 data_loader.write(
-                    "\n"+str({k: (round(v, 5) if isinstance(v, float) else v) for k, v in post_fix.items()}))
+                    "\n" + str({k: (round(v, 5) if isinstance(v, float) else v) for k, v in post_fix.items()}))
                 sys.stdout.flush()
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code) +
@@ -169,16 +160,13 @@ class SoftMaskedBertTrainer(object):
                     )
         return stats.xent()
 
-    def _stats(self, stats, loss, d_scores, label, c_scores, target):
+    def _stats(self, stats, loss, c_scores, target):
         c_pred = c_scores.argmax(dim=-1)
         non_padding = target.ne(self.tokenizer.pad_token_id)
         c_num_correct = c_pred.eq(target).masked_select(non_padding).sum().item()
         num_non_padding = non_padding.sum().item()
 
-        d_pred = torch.round(d_scores).long()
-        d_num_correct = d_pred.eq(label).masked_select(non_padding).sum().item()
-
-        stats.update(loss * num_non_padding, c_num_correct, d_num_correct, num_non_padding)
+        stats.update(loss * num_non_padding, c_num_correct, 0, num_non_padding)
 
 
 def _get_optimizer(model, learning_rate):

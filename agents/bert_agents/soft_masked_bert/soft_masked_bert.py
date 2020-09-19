@@ -21,14 +21,13 @@ class SoftMaskedBert(nn.Module):
         self.embedding = self.bert.embeddings.to(device)
         self.config = self.bert.config
 
-        embedding_size = self.config.to_dict()['hidden_size']
-
-        self.detector = BiGRU(embedding_size, opt.hidden_size, opt.rnn_layer)
+        self.detector = BiGRU(self.config.hidden_size, opt.hidden_size, opt.rnn_layer)
         self.corrector = self.bert.encoder
 
         mask_token_id = torch.tensor([[tokenizer.mask_token_id]]).to(device)
         self.mask_e = self.embedding(mask_token_id)
-        self.generator = nn.Sequential(nn.Linear(embedding_size, self.config.vocab_size),
+        self.dropout = nn.Dropout(self.config.hidden_dropout_prob)
+        self.generator = nn.Sequential(nn.Linear(self.config.hidden_size, self.config.vocab_size),
                                        nn.LogSoftmax(dim=-1))
 
     def forward(self, input_ids, input_mask, position_ids=None, token_type_ids=None):
@@ -48,6 +47,7 @@ class SoftMaskedBert(nn.Module):
                            encoder_attention_mask=encoder_extended_attention_mask)
         h = h[0] + e
 
+        h = self.dropout(h)
         log_probs = self.generator(h)
         return p, log_probs
 
