@@ -43,7 +43,7 @@ parser.add_argument("--dataset_path", type=str, default="data/xiaowei/neg/",
 parser.add_argument("--save_dir", type=str, default="checkpoints")
 
 # training
-parser.add_argument('--epochs', default=10, type=int)
+parser.add_argument('--epochs', default=20, type=int)
 
 
 def main():
@@ -64,11 +64,11 @@ def main():
         val_loss = trainer.evaluate(e, "valid")
         if best_loss > val_loss:
             best_loss = val_loss
-            trainer.save('best_model.pt')
+            trainer.save(SoftMaskedBertTrainer.__name__ + opt.dataset_path + 'best_model.pt')
             logger.info('Best val loss {} at epoch {}'.format(best_loss, e))
             test_loss = trainer.evaluate(e, "test")
 
-        trainer.load('best_model.pt')
+        trainer.load(SoftMaskedBertTrainer.__name__ + opt.dataset_path + 'best_model.pt')
         # for i in trainer.inference(val):
         #     print(i)
         #     print('\n')
