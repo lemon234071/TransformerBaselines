@@ -164,7 +164,7 @@ class SoftMaskedBertTrainer(object):
                 sys.stdout.flush()
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code) +
-                    "avg_loss: ".format(stats.xent()) +
+                    "avg_loss: {}".format(round(stats.xent(), 5)) +
                     "d_acc: {}, c_acc: {}".format(round(stats.accuracy()[0], 2), round(stats.accuracy()[1], 2))
                     )
         return stats.xent()

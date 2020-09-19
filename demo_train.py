@@ -38,7 +38,7 @@ setup_seed(42)
 
 parser = argparse.ArgumentParser()
 # data
-parser.add_argument("--dataset_path", type=str, default="data/xiaowei/all/",
+parser.add_argument("--dataset_path", type=str, default="data/xiaowei/neg/",
                     help="Path or url of the dataset. If empty download accroding to dataset.")
 parser.add_argument("--dataset", type=str, required=True,
                     help="Dataset name")
@@ -46,6 +46,7 @@ parser.add_argument("--save_dir", type=str, default="checkpoints")
 
 # training
 parser.add_argument('--epochs', default=20, type=int)
+parser.add_argument('--early_stop', default=10, type=int)
 
 
 def main():
@@ -60,8 +61,9 @@ def main():
     datasets = get_datasets(opt.dataset_path)
     trainer.load_data(datasets)
 
-    best_loss = 10000
     best_checkpoint = SoftMaskedBertTrainer.__name__ + opt.dataset + 'best_model.pt'
+    best_loss = 10000
+    patience = 0
     for e in range(opt.epochs):
         trainer.train(e)
         val_loss = trainer.evaluate(e, "valid")
@@ -70,6 +72,10 @@ def main():
             trainer.save(best_checkpoint)
             logger.info('Best val loss {} at epoch {}'.format(best_loss, e))
             test_loss = trainer.evaluate(e, "test")
+        else:
+            patience += 1
+            if patience > opt.early_stop:
+                break
 
         trainer.load(best_checkpoint)
         # for i in trainer.inference(val):
