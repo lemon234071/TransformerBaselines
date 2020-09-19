@@ -45,7 +45,7 @@ class SoftMaskedBertTrainer(object):
         agent.add_argument("--max_norm", type=float, default=1.0,
                            help="Clipping gradient norm")
 
-        agent.add_argument('--report_every', default=100, type=int)
+        agent.add_argument('--report_every', default=-1, type=int)
 
         agent.add_argument('--gama', type=float, default=0.8)
 
