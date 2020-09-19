@@ -161,6 +161,7 @@ class SoftMaskedBertTrainer(object):
                 post_fix.update(stats.report())
                 data_loader.write(
                     "\n"+str({k: (round(v, 5) if isinstance(v, float) else v) for k, v in post_fix.items()}))
+                sys.stdout.flush()
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code) +
                     "avg_loss: ".format(stats.xent()) +
