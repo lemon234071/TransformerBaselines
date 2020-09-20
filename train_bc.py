@@ -77,7 +77,8 @@ def main():
             if patience > opt.early_stop:
                 break
 
-        trainer.load(best_checkpoint)
+        #trainer.load(best_checkpoint)
+
         # for i in trainer.inference(val):
         #     print(i)
         #     print('\n')
