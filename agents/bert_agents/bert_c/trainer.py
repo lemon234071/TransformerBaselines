@@ -41,7 +41,7 @@ class BertTrainer(object):
         agent.add_argument("--learning_rate", default=2e-5, type=float)
         agent.add_argument("--gradient_accumulation_steps", type=int, default=1,
                            help="Accumulate gradients on several steps")
-        agent.add_argument("--max_norm", type=float, default=1.0,
+        agent.add_argument("--max_grad_norm", type=float, default=1.0,
                            help="Clipping gradient norm")
 
         agent.add_argument('--report_every', default=-1, type=int)
@@ -52,6 +52,10 @@ class BertTrainer(object):
 
         self.opt = opt
         self.device = device
+
+        self._dataset = {}
+        self._dataloader = {}
+
         self.tokenizer = BertTokenizer.from_pretrained(opt.vocab_path if opt.vocab_path else opt.checkpoint,
                                                        do_lower_case=True)
         self.config = BertConfig.from_pretrained(BERT_MODEL)
@@ -65,11 +69,6 @@ class BertTrainer(object):
         # _optimizer = optim.Adam(self.model.parameters(), lr=opt.lr, weight_decay=opt.weight_decay)
         _optimizer = _get_optimizer(self.model, opt.learning_rate)
         self.optim_schedule = ScheduledOptim(opt, _optimizer)
-        self.gradient_accumulation_steps = opt.gradient_accumulation_steps
-        self.report_every = opt.report_every
-
-        self._dataset = {}
-        self._dataloader = {}
 
     def load_data(self, datasets):
         for k, v in datasets.items():
@@ -126,6 +125,15 @@ class BertTrainer(object):
                                 total=len(data_loader),
                                 bar_format="{l_bar}{r_bar}")
 
+        logger.info("***** Running *****")
+        # logger.info("  Num examples = %d", len(self.train_dataset))
+        # logger.info("  Num Epochs = %d", self.args.num_train_epochs)
+        # logger.info("  Total train batch size = %d", self.args.train_batch_size)
+        # logger.info("  Gradient Accumulation steps = %d", self.args.gradient_accumulation_steps)
+        # logger.info("  Total optimization steps = %d", t_total)
+        # logger.info("  Logging steps = %d", self.args.logging_steps)
+        # logger.info("  Save steps = %d", self.args.save_steps)
+
         stats = Statistics()
         for step, batch in data_loader:
             # 0. batch_data will be sent into the device(GPU or cpu)
@@ -136,14 +144,16 @@ class BertTrainer(object):
             loss, logits = self.model(input_ids, input_mask, labels=output_ids)  # prob [batch_size, seq_len, 1]
 
             if data_type == "train":
+                loss = loss / self.opt.gradient_accumulation_steps
                 loss.backward(retain_graph=True)
-                if step % self.gradient_accumulation_steps == 0:
+                if step % self.opt.gradient_accumulation_steps == 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
                     self.optim_schedule.step()
                     self.optim_schedule.zero_grad()
 
             # sta
             self._stats(stats, loss.item(), logits.softmax(dim=-1), output_ids)
-            if data_type == "train" and self.report_every > 0 and step % self.report_every == 0:
+            if data_type == "train" and self.opt.report_every > 0 and step % self.opt.report_every == 0:
                 post_fix = {
                     "epoch": epoch,
                     "iter": step,
@@ -155,7 +165,7 @@ class BertTrainer(object):
                 sys.stdout.flush()
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code) +
-                    "avg_loss: {}".format(round(stats.xent(), 5)) +
+                    "avg_loss: {} ".format(round(stats.xent(), 5)) +
                     "d_acc: {}, c_acc: {}".format(round(stats.accuracy()[0], 2), round(stats.accuracy()[1], 2))
                     )
         return stats.xent()
@@ -169,16 +179,16 @@ class BertTrainer(object):
         stats.update(loss * num_non_padding, c_num_correct, 0, num_non_padding)
 
 
-def _get_optimizer(model, learning_rate):
+def _get_optimizer(model, opt):
     param_optimizer = list(model.named_parameters())
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in param_optimizer if
-                    not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+                    not any(nd in n for nd in no_decay)], 'weight_decay': opt.weight_decay},
         {'params': [p for n, p in param_optimizer if
                     any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
 
-    return optim.Adam(optimizer_grouped_parameters, lr=learning_rate)
+    return optim.Adam(optimizer_grouped_parameters, lr=opt.learning_rate)
 
 
 class Statistics(object):

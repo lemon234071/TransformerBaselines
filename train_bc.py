@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 import torch
 
-from agents.bert_agents.bert.trainer import BertTrainer
-from agents.bert_agents.bert.data_process import get_datasets
+from agents.bert_agents.bert_c.trainer import BertTrainer
+from agents.bert_agents.bert_c.data_process import get_datasets
 
 # torch.backends.cudnn.enabled = True
 # torch.backends.cudnn.benchmark = True
@@ -46,7 +46,7 @@ parser.add_argument("--save_dir", type=str, default="checkpoints")
 
 # training
 parser.add_argument('--epochs', default=20, type=int)
-parser.add_argument('--early_stop', default=10, type=int)
+parser.add_argument('--early_stop', default=3, type=int)
 
 
 def main():

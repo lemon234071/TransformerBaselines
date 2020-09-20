@@ -42,7 +42,7 @@ class SoftMaskedBertTrainer(object):
         agent.add_argument("--learning_rate", default=2e-5, type=float)
         agent.add_argument("--gradient_accumulation_steps", type=int, default=1,
                            help="Accumulate gradients on several steps")
-        agent.add_argument("--max_norm", type=float, default=1.0,
+        agent.add_argument("--max_grad_norm", type=float, default=1.0,
                            help="Clipping gradient norm")
 
         agent.add_argument('--report_every', default=-1, type=int)
@@ -53,6 +53,9 @@ class SoftMaskedBertTrainer(object):
 
         self.opt = opt
         self.device = device
+        self._dataset = {}
+        self._dataloader = {}
+
         self.tokenizer = BertTokenizer.from_pretrained(opt.vocab_path if opt.vocab_path else opt.checkpoint,
                                                        do_lower_case=True)
         self.model = SoftMaskedBert(opt, self.tokenizer, device).to(device)
@@ -62,17 +65,12 @@ class SoftMaskedBertTrainer(object):
         #     self.model = nn.DataParallel(self.model, device_ids=[0,1,2])
 
         # _optimizer = optim.Adam(self.model.parameters(), lr=opt.lr, weight_decay=opt.weight_decay)
-        _optimizer = _get_optimizer(self.model, opt.learning_rate)
+        _optimizer = _get_optimizer(self.model, opt)
         self.optim_schedule = ScheduledOptim(opt, _optimizer)
-        self.gradient_accumulation_steps = opt.gradient_accumulation_steps
 
         self.criterion_c = nn.NLLLoss(ignore_index=self.tokenizer.pad_token_id)
         self.criterion_d = nn.BCELoss(reduction="none")
         self.gama = opt.gama
-        self.report_every = opt.report_every
-
-        self._dataset = {}
-        self._dataloader = {}
 
     def load_data(self, datasets):
         for k, v in datasets.items():
@@ -145,14 +143,16 @@ class SoftMaskedBertTrainer(object):
             loss = (1 - self.gama) * loss_d + self.gama * loss_c
 
             if data_type == "train":
+                loss = loss / self.opt.gradient_accumulation_steps
                 loss.backward(retain_graph=True)
-                if step % self.gradient_accumulation_steps == 0:
+                if step % self.opt.gradient_accumulation_steps == 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
                     self.optim_schedule.step()
                     self.optim_schedule.zero_grad()
 
             # sta
             self._stats(stats, loss.item(), d_scores, labels, c_scores, output_ids)
-            if data_type == "train" and self.report_every > 0 and step % self.report_every == 0:
+            if data_type == "train" and self.opt.report_every > 0 and step % self.opt.report_every == 0:
                 post_fix = {
                     "epoch": epoch,
                     "iter": step,
@@ -160,11 +160,11 @@ class SoftMaskedBertTrainer(object):
                 }
                 post_fix.update(stats.report())
                 data_loader.write(
-                    "\n"+str({k: (round(v, 5) if isinstance(v, float) else v) for k, v in post_fix.items()}))
+                    "\n" + str({k: (round(v, 5) if isinstance(v, float) else v) for k, v in post_fix.items()}))
                 sys.stdout.flush()
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code) +
-                    "avg_loss: {}".format(round(stats.xent(), 5)) +
+                    "avg_loss: {} ".format(round(stats.xent(), 5)) +
                     "d_acc: {}, c_acc: {}".format(round(stats.accuracy()[0], 2), round(stats.accuracy()[1], 2))
                     )
         return stats.xent()
@@ -181,16 +181,16 @@ class SoftMaskedBertTrainer(object):
         stats.update(loss * num_non_padding, c_num_correct, d_num_correct, num_non_padding)
 
 
-def _get_optimizer(model, learning_rate):
+def _get_optimizer(model, opt):
     param_optimizer = list(model.named_parameters())
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in param_optimizer if
-                    not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+                    not any(nd in n for nd in no_decay)], 'weight_decay': opt.weight_decay},
         {'params': [p for n, p in param_optimizer if
                     any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
 
-    return optim.Adam(optimizer_grouped_parameters, lr=learning_rate)
+    return optim.Adam(optimizer_grouped_parameters, lr=opt.learning_rate)
 
 
 class Statistics(object):

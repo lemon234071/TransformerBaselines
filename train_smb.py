@@ -46,7 +46,7 @@ parser.add_argument("--save_dir", type=str, default="checkpoints")
 
 # training
 parser.add_argument('--epochs', default=20, type=int)
-parser.add_argument('--early_stop', default=10, type=int)
+parser.add_argument('--early_stop', default=3, type=int)
 
 
 def main():
