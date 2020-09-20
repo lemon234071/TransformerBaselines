@@ -35,7 +35,7 @@ def collate(dataset, pad_id, batch_first=True):
             if "label" in input_name:
                 input_tensor = pad_sequence(
                     [torch.tensor(feature, dtype=torch.long) for feature in dataset[input_name]],
-                    batch_first=batch_first, padding_value=-1)
+                    batch_first=batch_first, padding_value=-100)
             else:
                 input_tensor = pad_sequence(
                     [torch.tensor(feature, dtype=torch.long) for feature in dataset[input_name]],

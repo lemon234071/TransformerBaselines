@@ -67,7 +67,7 @@ class BertTrainer(object):
         #     self.model = nn.DataParallel(self.model, device_ids=[0,1,2])
 
         # _optimizer = optim.Adam(self.model.parameters(), lr=opt.lr, weight_decay=opt.weight_decay)
-        _optimizer = _get_optimizer(self.model, opt.learning_rate)
+        _optimizer = _get_optimizer(self.model, opt)
         self.optim_schedule = ScheduledOptim(opt, _optimizer)
 
     def load_data(self, datasets):
