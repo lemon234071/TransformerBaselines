@@ -146,7 +146,7 @@ class SoftMaskedBertTrainer(object):
                 loss = loss / self.opt.gradient_accumulation_steps
                 loss.backward(retain_graph=True)
                 if step % self.opt.gradient_accumulation_steps == 0:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
+                    #torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
                     self.optim_schedule.step()
                     self.optim_schedule.zero_grad()
 

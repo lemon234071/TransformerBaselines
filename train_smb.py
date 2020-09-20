@@ -72,6 +72,7 @@ def main():
             trainer.save(best_checkpoint)
             logger.info('Best val loss {} at epoch {}'.format(best_loss, e))
             test_loss = trainer.evaluate(e, "test")
+            patience = 0
         else:
             patience += 1
             if patience > opt.early_stop:
