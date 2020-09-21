@@ -88,20 +88,24 @@ class BertTrainer(object):
         self.model.eval()
         return self.iteration(epoch, self._dataloader[data_type], data_type=data_type)
 
-    def infer(self, data_loader):
+    def infer(self, data_type):
+        data_loader = self._dataloader[data_type]
         self.model.eval()
         out_put = []
         data_loader = tqdm.tqdm(enumerate(data_loader),
                                 desc="%s" % 'Inference:',
                                 total=len(data_loader),
                                 bar_format="{l_bar}{r_bar}")
-        for i, data in data_loader:
+        for step, batch in data_loader:
             # 0. batch_data will be sent into the device(GPU or cpu)
-            data = {key: value.to(self.device) for key, value in data.items()}
+            input_ids, input_mask, output_ids, labels = tuple(
+                input_tensor.to(self.device) for input_tensor in batch)
 
-            out, prob = self.model(data["input_ids"], data["input_mask"],
-                                   data["segment_ids"])  # prob [batch_size, seq_len, 1]
-            out_put.extend(out.argmax(dim=-1).cpu().numpy().tolist())
+            (logits,) = self.model(input_ids, input_mask)  # prob [batch_size, seq_len, 1]
+
+            label_mask = logits.softmax(dim=-1).argmax(dim=-1).bool()
+            input_ids[label_mask] = self.tokenizer.mask_token_id
+            out_put.extend([line[line_mask.bool()].cpu().tolist()[1:-1] for line, line_mask in zip(input_ids, input_mask)])
         return [''.join(self.tokenizer.convert_ids_to_tokens(x)) for x in out_put]
 
     def save(self, file_path):
@@ -146,7 +150,7 @@ class BertTrainer(object):
                 loss = loss / self.opt.gradient_accumulation_steps
                 loss.backward(retain_graph=True)
                 if step % self.opt.gradient_accumulation_steps == 0:
-                    #torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
+                    # torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
                     self.optim_schedule.step()
                     self.optim_schedule.zero_grad()
 

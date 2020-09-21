@@ -8,7 +8,7 @@ from torch.nn.utils.rnn import pad_sequence
 logger = logging.getLogger(__file__)
 
 
-def build_dataset(dataset, tokenizer):
+def build_dataset(dataset, tokenizer, mask=False):
     logger.info("Tokenize and encode the dataset")
     instances = collections.defaultdict(list)
     for line in dataset:
@@ -19,6 +19,10 @@ def build_dataset(dataset, tokenizer):
         assert len(input_seq) == len(output_seq)
         input_mask = [1 for _ in range(len(input_seq))]
         label = [int(c1 != c2) for c1, c2 in zip(input_seq, output_seq)]
+        if mask:
+            for i in range(len(label)):
+                if label[i]:
+                    input_seq[i] = tokenizer.mask_token_id
 
         instances["pad_input"].append(input_seq)
         instances["pad_input_mask"].append(input_mask)

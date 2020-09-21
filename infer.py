@@ -40,13 +40,17 @@ parser.add_argument("--agent", type=str, required=True,
                     help="Agent name")
 
 # data
-parser.add_argument("--dataset_path", type=str, default="data/xiaowei/neg_masked/",
+parser.add_argument("--dataset_path", type=str, default="data/xiaowei/neg/",
                     help="Path or url of the dataset. If empty download accroding to dataset.")
 parser.add_argument("--save_dir", type=str, default="checkpoints")
 
 # training
 parser.add_argument('--epochs', default=100000, type=int)
 parser.add_argument('--early_stop', default=3, type=int)
+
+# infer
+parser.add_argument("--src_path", type=str)
+parser.add_argument("--out_path", type=str, default="result/infer.txt")
 
 parsed = vars(parser.parse_known_args()[0])
 trainer_class = AGENT_CLASSES[parsed.get('agent')]
@@ -68,30 +72,11 @@ def main():
         os.mkdir("checkpoint")
     best_checkpoint = "checkpoint/" + trainer_class.__name__ + "_" + \
                       opt.dataset_path.replace("/", "&&&").replace("\\", "&&&") + '_best_model.pt'
-    best_loss = 10000
-    patience = 0
-    for e in range(opt.epochs):
-        trainer.train(e)
-        val_loss = trainer.evaluate(e, "valid")
-        if best_loss > val_loss:
-            best_loss = val_loss
-            trainer.save(best_checkpoint)
-            logger.info('Best val loss {} at epoch {}'.format(best_loss, e))
-            test_loss = trainer.evaluate(e, "test")
-            patience = 0
-        else:
-            patience += 1
-            if patience > opt.early_stop:
-                break
 
-        # trainer.load(best_checkpoint)
-
-        # for i in trainer.inference(val):
-        #     print(i)
-        #     print('\n')
-        # if do_test:
-        #     final_test_ppl = manager.evaluate('test')
-        #     print('Test PPL: {:.4f}'.format(final_test_ppl))
+    #trainer.load(best_checkpoint)
+    result = trainer.infer(opt.src_path)
+    with open(opt.out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(result))
 
 
 if __name__ == '__main__':
