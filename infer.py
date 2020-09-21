@@ -73,8 +73,12 @@ def main():
     best_checkpoint = "checkpoint/" + trainer_class.__name__ + "_" + \
                       opt.dataset_path.replace("/", "&&&").replace("\\", "&&&") + '_best_model.pt'
 
-    #trainer.load(best_checkpoint)
+    trainer.load(best_checkpoint)
     result = trainer.infer(opt.src_path)
+
+    out_dir = opt.out_path[:opt.out_path.rfind("/")]
+    if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
     with open(opt.out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(result))
 
