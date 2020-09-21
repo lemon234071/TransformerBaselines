@@ -70,7 +70,7 @@ class BertTrainer(object):
         _optimizer = _get_optimizer(self.model, opt)
         self.optim_schedule = ScheduledOptim(opt, _optimizer)
 
-    def load_data(self, datasets, infer=False):
+    def load_data(self, datasets):
         for k, v in datasets.items():
             # self._dataset[type] = BertDataset(self.tokenizer, data, max_len=self.opt.max_len)
             self._dataset[k] = build_dataset(v, self.tokenizer)

@@ -73,6 +73,7 @@ def main():
     best_checkpoint = "checkpoint/" + trainer_class.__name__ + "_" + \
                       opt.dataset_path.replace("/", "&&&").replace("\\", "&&&") + '_best_model.pt'
 
+    logger.info("load checkpoint form {}".format(best_checkpoint))
     trainer.load(best_checkpoint)
     result = trainer.infer(opt.src_path)
 
