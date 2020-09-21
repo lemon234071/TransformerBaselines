@@ -42,8 +42,6 @@ parser.add_argument("--agent", type=str, required=True,
 # data
 parser.add_argument("--dataset_path", type=str, default="data/xiaowei/neg/",
                     help="Path or url of the dataset. If empty download accroding to dataset.")
-parser.add_argument("--dataset", type=str, required=True,
-                    help="Dataset name")
 parser.add_argument("--save_dir", type=str, default="checkpoints")
 
 # training
@@ -68,7 +66,8 @@ def main():
 
     if not os.path.exists("checkpoint"):
         os.mkdir("checkpoint")
-    best_checkpoint = "checkpoint/" + trainer_class.__name__ + opt.dataset + 'best_model.pt'
+    best_checkpoint = "checkpoint/" + trainer_class.__name__ + "_" + \
+                      opt.dataset_path.replace("/", "&&&").replace("\\", "&&&") + '_best_model.pt'
     best_loss = 10000
     patience = 0
     for e in range(opt.epochs):
