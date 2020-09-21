@@ -59,7 +59,6 @@ class BertTrainer(object):
         self.tokenizer = BertTokenizer.from_pretrained(opt.vocab_path if opt.vocab_path else opt.checkpoint,
                                                        do_lower_case=True)
         self.config = BertConfig.from_pretrained(opt.checkpoint)
-        self.config.num_labels = self.config.vocab_size
         self.model = BertForTokenClassification.from_pretrained(opt.checkpoint, config=self.config).to(device)
 
         # if torch.cuda.device_count() > 1:
@@ -141,7 +140,7 @@ class BertTrainer(object):
             input_ids, input_mask, output_ids, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
-            loss, logits = self.model(input_ids, input_mask, labels=output_ids)  # prob [batch_size, seq_len, 1]
+            loss, logits = self.model(input_ids, input_mask, labels=labels)  # prob [batch_size, seq_len, 1]
 
             if data_type == "train":
                 loss = loss / self.opt.gradient_accumulation_steps
@@ -152,7 +151,7 @@ class BertTrainer(object):
                     self.optim_schedule.zero_grad()
 
             # sta
-            self._stats(stats, loss.item(), logits.softmax(dim=-1), output_ids)
+            self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)
             if data_type == "train" and self.opt.report_every > 0 and step % self.opt.report_every == 0:
                 post_fix = {
                     "epoch": epoch,
@@ -170,13 +169,13 @@ class BertTrainer(object):
                     )
         return stats.xent()
 
-    def _stats(self, stats, loss, c_scores, target):
-        c_pred = c_scores.argmax(dim=-1)
-        non_padding = target.ne(self.tokenizer.pad_token_id)
-        c_num_correct = c_pred.eq(target).masked_select(non_padding).sum().item()
+    def _stats(self, stats, loss, d_scores, target):
+        d_pred = d_scores.argmax(dim=-1)
+        non_padding = target.ne(-100)
+        d_num_correct = d_pred.eq(target).masked_select(non_padding).sum().item()
         num_non_padding = non_padding.sum().item()
 
-        stats.update(loss * num_non_padding, c_num_correct, 0, num_non_padding)
+        stats.update(loss * num_non_padding, 0, d_num_correct, num_non_padding)
 
 
 def _get_optimizer(model, opt):

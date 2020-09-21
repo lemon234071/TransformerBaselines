@@ -8,11 +8,9 @@ import argparse
 from pprint import pformat
 
 import numpy as np
-import pandas as pd
 import torch
 
-from agents.bert_agents.soft_masked_bert.trainer import SoftMaskedBertTrainer
-from agents.bert_agents.soft_masked_bert.data_process import get_datasets
+from agents import AGENT_CLASSES, DATA_CLASSES
 
 # torch.backends.cudnn.enabled = True
 # torch.backends.cudnn.benchmark = True
@@ -37,6 +35,10 @@ def setup_seed(seed):
 setup_seed(42)
 
 parser = argparse.ArgumentParser()
+# agent
+parser.add_argument("--agent", type=str, required=True,
+                    help="Agent name")
+
 # data
 parser.add_argument("--dataset_path", type=str, default="data/xiaowei/neg/",
                     help="Path or url of the dataset. If empty download accroding to dataset.")
@@ -52,16 +54,19 @@ parser.add_argument('--early_stop', default=3, type=int)
 def main():
     # my_module = importlib.import_module(module_name)
     # model_class = getattr(my_module, class_name)
-    SoftMaskedBertTrainer.add_cmdline_args(parser)
+    temp_opt = parser.parse_args()
+    trainer_class = AGENT_CLASSES[temp_opt.agent]
+    trainer_class.add_cmdline_args(parser)
     opt = parser.parse_args()
     logger.info("Arguments: %s", pformat(opt))
+    trainer = trainer_class(opt, device)
 
-    trainer = SoftMaskedBertTrainer(opt, device)
-
-    datasets = get_datasets(opt.dataset_path)
+    datasets = DATA_CLASSES[opt.agent](opt.dataset_path)
     trainer.load_data(datasets)
 
-    best_checkpoint = SoftMaskedBertTrainer.__name__ + opt.dataset + 'best_model.pt'
+    if not os.path.exists("checkpoint"):
+        os.mkdir("checkpoint")
+    best_checkpoint = "checkpoint/" + trainer_class.__name__ + opt.dataset + 'best_model.pt'
     best_loss = 10000
     patience = 0
     for e in range(opt.epochs):
