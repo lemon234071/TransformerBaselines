@@ -1,7 +1,7 @@
 #!usr/bin/env python
 # -*- coding:utf-8 -*-
 import os
-import tqdm
+import sys
 import random
 import logging
 import argparse
@@ -47,17 +47,19 @@ parser.add_argument("--dataset", type=str, required=True,
 parser.add_argument("--save_dir", type=str, default="checkpoints")
 
 # training
-parser.add_argument('--epochs', default=20, type=int)
+parser.add_argument('--epochs', default=100000, type=int)
 parser.add_argument('--early_stop', default=3, type=int)
+
+parsed = vars(parser.parse_known_args()[0])
+trainer_class = AGENT_CLASSES[parsed.get('agent')]
+trainer_class.add_cmdline_args(parser)
+opt = parser.parse_args()
 
 
 def main():
     # my_module = importlib.import_module(module_name)
     # model_class = getattr(my_module, class_name)
-    temp_opt = parser.parse_args()
-    trainer_class = AGENT_CLASSES[temp_opt.agent]
-    trainer_class.add_cmdline_args(parser)
-    opt = parser.parse_args()
+
     logger.info("Arguments: %s", pformat(opt))
     trainer = trainer_class(opt, device)
 
@@ -83,7 +85,7 @@ def main():
             if patience > opt.early_stop:
                 break
 
-        #trainer.load(best_checkpoint)
+        # trainer.load(best_checkpoint)
 
         # for i in trainer.inference(val):
         #     print(i)
