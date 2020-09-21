@@ -97,16 +97,24 @@ class BertTrainer(object):
                                 desc="%s" % 'Inference:',
                                 total=len(data_loader),
                                 bar_format="{l_bar}{r_bar}")
+        stats = Statistics()
         for step, batch in data_loader:
             # 0. batch_data will be sent into the device(GPU or cpu)
             input_ids, input_mask, output_ids, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
-            (logits,) = self.model(input_ids, input_mask)  # prob [batch_size, seq_len, 1]
+            loss, logits = self.model(input_ids, input_mask, labels=labels)  # prob [batch_size, seq_len, 1]
+
+            self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)
 
             label_mask = logits.softmax(dim=-1).argmax(dim=-1).bool()
             input_ids[label_mask] = self.tokenizer.mask_token_id
-            out_put.extend([line[line_mask.bool()].cpu().tolist()[1:-1] for line, line_mask in zip(input_ids, input_mask)])
+            out_put.extend(
+                [line[line_mask.bool()].cpu().tolist()[1:-1] for line, line_mask in zip(input_ids, input_mask)])
+
+        logger.info("avg_loss: {} ".format(round(stats.xent(), 5)) +
+                    "d_acc: {}, c_acc: {}".format(round(stats.accuracy()[0], 2), round(stats.accuracy()[1], 2))
+                    )
         return [''.join(self.tokenizer.convert_ids_to_tokens(x)) for x in out_put]
 
     def save(self, file_path):
