@@ -75,10 +75,11 @@ class BertTrainer(object):
             self._dataset[k] = build_dataset(v, self.tokenizer)
             tensor_dataset = collate(self._dataset[k], self.tokenizer.pad_token_id)
             dataset = TensorDataset(*tensor_dataset)
+            shuffle = (k == "train") and not infer
             self._dataloader[k] = DataLoader(dataset,
                                              batch_size=self.opt.batch_size,
                                              num_workers=self.opt.num_workers,
-                                             shuffle=(k == "train"))
+                                             shuffle=shuffle)
 
     def train(self, epoch, data_type="train"):
         self.model.train()
