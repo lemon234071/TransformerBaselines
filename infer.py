@@ -66,7 +66,7 @@ def main():
     trainer = trainer_class(opt, device)
 
     datasets = DATA_CLASSES[opt.agent](opt.dataset_path)
-    trainer.load_data(datasets)
+    trainer.load_data(datasets, infer=True)
 
     if not os.path.exists("checkpoint"):
         os.mkdir("checkpoint")
