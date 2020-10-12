@@ -11,6 +11,7 @@ from torch import optim
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import BertTokenizer, BertModel, BertConfig, BertForTokenClassification
 
+from utils import Statistics
 from agents.optim_schedule import ScheduledOptim
 from .data_utils import build_dataset, collate
 
@@ -100,7 +101,7 @@ class BertTrainer(object):
         stats = Statistics()
         for step, batch in data_loader:
             # 0. batch_data will be sent into the device(GPU or cpu)
-            input_ids, input_mask, output_ids, labels = tuple(
+            input_ids, input_mask, output_idsz, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
             loss, logits = self.model(input_ids, input_mask, labels=labels)  # prob [batch_size, seq_len, 1]
@@ -111,10 +112,7 @@ class BertTrainer(object):
             input_ids[label_mask] = self.tokenizer.mask_token_id
             out_put.extend(
                 [line[line_mask.bool()].cpu().tolist()[1:-1] for line, line_mask in zip(input_ids, input_mask)])
-
-        logger.info("avg_loss: {} ".format(round(stats.xent(), 5)) +
-                    "d_acc: {}, c_acc: {}".format(round(stats.accuracy()[0], 2), round(stats.accuracy()[1], 2))
-                    )
+        self._report(stats)
         return [''.join(self.tokenizer.convert_ids_to_tokens(x)) for x in out_put]
 
     def save(self, file_path):
@@ -165,30 +163,43 @@ class BertTrainer(object):
 
             # sta
             self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)
-            if data_type == "train" and self.opt.report_every > 0 and step % self.opt.report_every == 0:
-                post_fix = {
-                    "epoch": epoch,
-                    "iter": step,
-                    "lr": self.optim_schedule.learning_rate()
-                }
-                post_fix.update(stats.report())
-                data_loader.write(
-                    "\n" + str({k: (round(v, 5) if isinstance(v, float) else v) for k, v in post_fix.items()}))
-                sys.stdout.flush()
+            # if data_type == "train" and self.opt.report_every > 0 and step % self.opt.report_every == 0:
+            #     post_fix = {
+            #         "epoch": epoch,
+            #         "iter": step,
+            #         "lr": self.optim_schedule.learning_rate()
+            #     }
+            #     post_fix.update(stats.report())
+            #     data_loader.write(
+            #         "\n" + str({k: (round(v, 5) if isinstance(v, float) else v) for k, v in post_fix.items()}))
+            #     sys.stdout.flush()
 
-        logger.info("Epoch{}_{}, ".format(epoch, str_code) +
-                    "avg_loss: {} ".format(round(stats.xent(), 5)) +
-                    "d_acc: {}, c_acc: {}".format(round(stats.accuracy()[0], 2), round(stats.accuracy()[1], 2))
-                    )
+        logger.info("Epoch{}_{}, ".format(epoch, str_code))
+        self._report(stats)
         return stats.xent()
 
-    def _stats(self, stats, loss, d_scores, target):
+    def _stats(self, stats: Statistics, loss, d_scores, target):
         d_pred = d_scores.argmax(dim=-1)
         non_padding = target.ne(-100)
-        d_num_correct = d_pred.eq(target).masked_select(non_padding).sum().item()
         num_non_padding = non_padding.sum().item()
 
-        stats.update(loss * num_non_padding, 0, d_num_correct, num_non_padding)
+        metrics = {
+            # "n_correct": d_pred.eq(target).masked_select(non_padding).sum().item(),
+            "d_tp": (d_pred.eq(1) & target.eq(1)).masked_select(non_padding).sum().item(),
+            "d_fp": (d_pred.eq(1) & target.eq(0)).masked_select(non_padding).sum().item(),
+            "d_tn": (d_pred.eq(0) & target.eq(0)).masked_select(non_padding).sum().item(),
+            "d_fn": (d_pred.eq(0) & target.eq(1)).masked_select(non_padding).sum().item(),
+        }
+        stats.update(loss * num_non_padding, num_non_padding, metrics)
+        # stats.update(loss * num_non_padding, 0, d_num_correct, num_non_padding,
+        #              tp, fp, tn, fn)
+
+    def _report(self, stats: Statistics):
+        logger.info("avg_loss: {} ".format(round(stats.xent(), 5)) +
+                    "acc: {}, prec: {}, recall: {}, f1: {}".format(
+                        round(stats.aprf("d_")[0], 5), round(stats.aprf("d_")[1], 5),
+                        round(stats.aprf("d_")[2], 5), round(stats.aprf("d_")[3], 5))
+                    )
 
 
 def _get_optimizer(model, opt):
@@ -201,107 +212,3 @@ def _get_optimizer(model, opt):
                     any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
 
     return optim.Adam(optimizer_grouped_parameters, lr=opt.learning_rate)
-
-
-class Statistics(object):
-    """
-    Accumulator for loss statistics.
-    Currently calculates:
-
-    * accuracy
-    * perplexity
-    * elapsed time
-    """
-
-    def __init__(self, loss=0, n_words=0, n_correct=0):
-        self.loss = loss
-        self.n_words = n_words
-        self.c_n_correct = n_correct
-        self.d_n_correct = 0
-        self.n_src_words = 0
-        self.start_time = time.time()
-
-        self.reset()
-
-    def reset(self):
-        self.steps_loss = 0
-        self.steps_words = 0
-        self.steps_c_n_correct = 0
-        self.steps_d_n_correct = 0
-
-    def update(self, loss, c_num_correct, d_num_correct, num_non_padding):
-        """
-        Update statistics by suming values with another `Statistics` object
-
-        Args:
-            stat: another statistic object
-            update_n_src_words(bool): whether to update (sum) `n_src_words`
-                or not
-        """
-        self.steps_loss += loss
-        self.steps_c_n_correct += c_num_correct
-        self.steps_d_n_correct += d_num_correct
-        self.steps_words += num_non_padding
-
-        self.loss += loss
-        self.c_n_correct += c_num_correct
-        self.d_n_correct += d_num_correct
-        self.n_words += num_non_padding
-
-    def report(self):
-        output = {"loss": self.steps_loss / self.steps_words,
-                  "d_acc": 100 * (self.steps_d_n_correct / self.n_words),
-                  "c_acc": 100 * (self.steps_c_n_correct / self.n_words),
-                  "elapsed_time": self.elapsed_time()}
-        self.reset()
-        return output
-
-    def accuracy(self):
-        """ compute accuracy """
-        return 100 * (self.d_n_correct / self.n_words), 100 * (self.c_n_correct / self.n_words)
-
-    def xent(self):
-        """ compute cross entropy """
-        return self.loss / self.n_words
-
-    def ppl(self):
-        """ compute perplexity """
-        return math.exp(min(self.loss / self.n_words, 100))
-
-    def elapsed_time(self):
-        """ compute elapsed time """
-        return time.time() - self.start_time
-
-    # def output(self, step, num_steps, learning_rate, start):
-    #     """Write out statistics to stdout.
-    #
-    #     Args:
-    #        step (int): current step
-    #        n_batch (int): total batches
-    #        start (int): start time of step.
-    #     """
-    #     t = self.elapsed_time()
-    #     step_fmt = "%2d" % step
-    #     if num_steps > 0:
-    #         step_fmt = "%s/%5d" % (step_fmt, num_steps)
-    #     logger.info(
-    #         ("Step %s; acc: %6.2f; ppl: %5.2f; xent: %4.2f; " +
-    #          "lr: %7.7f; %3.0f/%3.0f tok/s; %6.0f sec")
-    #         % (step_fmt,
-    #            self.accuracy(),
-    #            self.ppl(),
-    #            self.xent(),
-    #            learning_rate,
-    #            self.n_src_words / (t + 1e-5),
-    #            self.n_words / (t + 1e-5),
-    #            time.time() - start))
-    #     sys.stdout.flush()
-    #
-    # def log_tensorboard(self, prefix, writer, learning_rate, step):
-    #     """ display statistics to tensorboard """
-    #     t = self.elapsed_time()
-    #     writer.add_scalar(prefix + "/xent", self.xent(), step)
-    #     writer.add_scalar(prefix + "/ppl", self.ppl(), step)
-    #     writer.add_scalar(prefix + "/accuracy", self.accuracy(), step)
-    #     writer.add_scalar(prefix + "/tgtper", self.n_words / t, step)
-    #     writer.add_scalar(prefix + "/lr", learning_rate, step)
