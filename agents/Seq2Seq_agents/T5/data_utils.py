@@ -12,12 +12,18 @@ def build_dataset(dataset, tokenizer):
     logger.info("Tokenize and encode the dataset")
     instances = collections.defaultdict(list)
     for line in dataset:
+        # input_idx = tokenizer.convert_tokens_to_ids(
+        #     tokenizer.tokenize(line["system_dialog_acts"] + tokenizer.sep_token + line["ast-hyps1"]))
+        # label_idx = tokenizer.convert_tokens_to_ids(
+        #     tokenizer.tokenize(" ; ".join(line["semantics"])))
+        # input_seq = [tokenizer.cls_token_id] + input_idx + [tokenizer.sep_token_id]
+        # label_seq = [tokenizer.cls_token_id] + label_idx + [tokenizer.sep_token_id]
         input_idx = tokenizer.convert_tokens_to_ids(
-            tokenizer.tokenize(line["system_dialog_acts"] + tokenizer.sep_token + line["ast-hyps1"]))
+            tokenizer.tokenize("system act: " + line["system_dialog_acts"] + "  asr hypothesis: " + line["ast-hyps1"]))
         label_idx = tokenizer.convert_tokens_to_ids(
             tokenizer.tokenize(" ; ".join(line["semantics"])))
-        input_seq = [tokenizer.cls_token_id] + input_idx + [tokenizer.sep_token_id]
-        label_seq = [tokenizer.cls_token_id] + label_idx + [tokenizer.sep_token_id]
+        input_seq = input_idx
+        label_seq = label_idx + [tokenizer.eos_token_id]
 
         input_mask = [1 for _ in range(len(input_seq))]
 

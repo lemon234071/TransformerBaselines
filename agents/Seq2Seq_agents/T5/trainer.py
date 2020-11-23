@@ -1,5 +1,6 @@
 import tqdm
 import logging
+import platform
 
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import T5Tokenizer, T5Config, T5ForConditionalGeneration
@@ -26,9 +27,12 @@ class Trainer(BaseTrainer):
     def __init__(self, opt, device):
         super(Trainer, self).__init__(opt, device)
         self.tokenizer = T5Tokenizer.from_pretrained(opt.vocab_path
-                                                  if opt.vocab_path else opt.checkpoint, do_lower_case=True)
+                                                     if opt.vocab_path else opt.checkpoint, do_lower_case=True)
         self.config = T5Config.from_pretrained(opt.checkpoint)
-        self.model = T5ForConditionalGeneration.from_pretrained(opt.checkpoint, config=self.config).to(device)
+
+        self.model = T5ForConditionalGeneration(self.config).to(device) \
+            if platform.system() == 'Windows' else \
+            T5ForConditionalGeneration.from_pretrained(opt.checkpoint, config=self.config).to(device)
         # if torch.cuda.device_count() > 1:
         #     print("Using %d GPUS for train" % torch.cuda.device_count())
         #     self.model = nn.DataParallel(self.model, device_ids=[0,1,2])
@@ -99,7 +103,8 @@ class Trainer(BaseTrainer):
             input_ids, input_mask, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
-            outputs = self.model(input_ids, attention_mask=input_mask, labels=labels)  # prob [batch_size, seq_len, 1]
+            outputs = self.model(input_ids, attention_mask=input_mask, labels=labels,
+                                 return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
             if data_type == "train":
@@ -127,25 +132,24 @@ class Trainer(BaseTrainer):
         self._report(stats)
         return stats.xent()
 
-    def _stats(self, stats: Statistics, loss, d_scores, target):
-        d_pred = d_scores.argmax(dim=-1)
+    def _stats(self, stats: Statistics, loss, scores, target):
+        preds = scores.argmax(dim=-1)
         non_padding = target.ne(-100)
         num_non_padding = non_padding.sum().item()
 
         metrics = {
-            # "n_correct": d_pred.eq(target).masked_select(non_padding).sum().item(),
-            "d_tp": (d_pred.eq(1) & target.eq(1)).masked_select(non_padding).sum().item(),
-            "d_fp": (d_pred.eq(1) & target.eq(0)).masked_select(non_padding).sum().item(),
-            "d_tn": (d_pred.eq(0) & target.eq(0)).masked_select(non_padding).sum().item(),
-            "d_fn": (d_pred.eq(0) & target.eq(1)).masked_select(non_padding).sum().item(),
+            "n_correct": preds.eq(target).masked_select(non_padding).sum().item()
+            # "d_tp": (preds.eq(1) & target.eq(1)).masked_select(non_padding).sum().item(),
+            # "d_fp": (preds.eq(1) & target.eq(0)).masked_select(non_padding).sum().item(),
+            # "d_tn": (preds.eq(0) & target.eq(0)).masked_select(non_padding).sum().item(),
+            # "d_fn": (preds.eq(0) & target.eq(1)).masked_select(non_padding).sum().item(),
         }
         stats.update(loss * num_non_padding, num_non_padding, metrics)
         # stats.update(loss * num_non_padding, 0, d_num_correct, num_non_padding,
         #              tp, fp, tn, fn)
 
     def _report(self, stats: Statistics):
-        logger.info("avg_loss: {} ".format(round(stats.xent(), 5)) +
-                    "acc: {}, prec: {}, recall: {}, f1: {}".format(
-                        round(stats.aprf("d_")[0], 5), round(stats.aprf("d_")[1], 5),
-                        round(stats.aprf("d_")[2], 5), round(stats.aprf("d_")[3], 5))
-                    )
+        logger.info(
+            "avg_loss: {} ".format(round(stats.xent(), 5)) +
+            "acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2))
+        )
