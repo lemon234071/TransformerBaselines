@@ -2,6 +2,7 @@ import tqdm
 import logging
 import platform
 
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import T5Tokenizer, T5Config, T5ForConditionalGeneration
 
@@ -102,9 +103,11 @@ class Trainer(BaseTrainer):
                                  return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
-            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1,
-                                            min_length=labels.size(1) - 1)
+            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1))
             # dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            if generated.size(1) < labels.size(1):
+                generated = pad_sequence([labels[0]] + [one for one in generated], batch_first=True,
+                                         padding_value=self.tokenizer.pad_token_id)[1:]
 
             if data_type == "train":
                 loss = loss / self.opt.gradient_accumulation_steps
