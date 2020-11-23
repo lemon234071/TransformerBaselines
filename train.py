@@ -42,6 +42,7 @@ parser.add_argument("--agent", type=str, required=True,
 parser.add_argument("--dataset_path", type=str, default="data/dstc2/",
                     help="Path or url of the dataset. If empty download accroding to dataset.")
 parser.add_argument("--save_dir", type=str, default="checkpoints")
+parser.add_argument('--save_name', type=str, default="")
 
 # training
 parser.add_argument('--epochs', default=100000, type=int)
@@ -75,7 +76,7 @@ def main():
 
     if not os.path.exists("checkpoint"):
         os.mkdir("checkpoint")
-    best_checkpoint = "checkpoint/" + parsed.get('agent') + "_" + \
+    best_checkpoint = "checkpoint/" + opt.save_name + "&&&" + parsed.get('agent') + "_" + \
                       opt.dataset_path.replace("/", "&&&").replace("\\", "&&&") + '_best_model.pt'
     best_loss = 10000
     patience = 0
