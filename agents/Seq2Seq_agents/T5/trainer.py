@@ -1,67 +1,34 @@
-import os
-import sys
-import time
-import math
 import tqdm
 import logging
 
-import torch
-import torch.nn as nn
-from torch import optim
 from torch.utils.data import DataLoader, TensorDataset
-from transformers import BertTokenizer, BertModel, BertConfig, BertForTokenClassification
+from transformers import T5Tokenizer, T5Config, T5ForConditionalGeneration
 
 from utils import Statistics
-from agents.optim_schedule import ScheduledOptim
+from agents.trainer_base import BaseTrainer
+from agents.optim_schedule import ScheduledOptim, _get_optimizer
 from .data_utils import build_dataset, collate
-
-# BERT_MODEL = 'bert-base-uncased'
-BERT_MODEL = 'bert-base-chinese'
 
 logger = logging.getLogger(__file__)
 
 
-class Trainer(object):
+class Trainer(BaseTrainer):
 
     @classmethod
     def add_cmdline_args(cls, argparser):
-        # super(SoftMaskedBertTrainer, cls).add_cmdline_args(argparser)
-        ScheduledOptim.add_cmdline_args(argparser)
-        agent = argparser.add_argument_group('SoftMaskedBertTrainer Arguments')
+        super(Trainer, cls).add_cmdline_args(argparser)
+        agent = argparser.add_argument_group('T5 Arguments')
         # add_common_cmdline_args(agent)
         # memory and knowledge arguments
-        agent.add_argument('--batch_size', default=8, type=int)
-        agent.add_argument('--num_workers', default=8, type=int)
-        agent.add_argument('--max_len', default=128, type=int)
 
-        agent.add_argument('--vocab_path', type=str, default=None)
-        agent.add_argument('--checkpoint', type=str, default=BERT_MODEL)
-        agent.add_argument("--hidden_size", default=256, type=int)
-        agent.add_argument("--rnn_layer", default=1, type=int)
-
-        agent.add_argument("--learning_rate", default=2e-5, type=float)
-        agent.add_argument("--gradient_accumulation_steps", type=int, default=1,
-                           help="Accumulate gradients on several steps")
-        agent.add_argument("--max_grad_norm", type=float, default=1.0,
-                           help="Clipping gradient norm")
-
-        agent.add_argument('--report_every', default=-1, type=int)
-
-        agent.add_argument('--gama', type=float, default=0.8)
+        agent.add_argument('--checkpoint', type=str, default="t5-small")
 
     def __init__(self, opt, device):
-
-        self.opt = opt
-        self.device = device
-
-        self._dataset = {}
-        self._dataloader = {}
-
-        self.tokenizer = BertTokenizer.from_pretrained(opt.vocab_path if opt.vocab_path else opt.checkpoint,
-                                                       do_lower_case=True)
-        self.config = BertConfig.from_pretrained(opt.checkpoint)
-        self.model = BertForTokenClassification.from_pretrained(opt.checkpoint, config=self.config).to(device)
-
+        super(Trainer, self).__init__(opt, device)
+        self.tokenizer = T5Tokenizer.from_pretrained(opt.vocab_path
+                                                  if opt.vocab_path else opt.checkpoint, do_lower_case=True)
+        self.config = T5Config.from_pretrained(opt.checkpoint)
+        self.model = T5ForConditionalGeneration.from_pretrained(opt.checkpoint, config=self.config).to(device)
         # if torch.cuda.device_count() > 1:
         #     print("Using %d GPUS for train" % torch.cuda.device_count())
         #     self.model = nn.DataParallel(self.model, device_ids=[0,1,2])
@@ -81,14 +48,6 @@ class Trainer(object):
                                              batch_size=self.opt.batch_size,
                                              num_workers=self.opt.num_workers,
                                              shuffle=shuffle)
-
-    def train(self, epoch, data_type="train"):
-        self.model.train()
-        return self.iteration(epoch, self._dataloader[data_type])
-
-    def evaluate(self, epoch, data_type="valid"):
-        self.model.eval()
-        return self.iteration(epoch, self._dataloader[data_type], data_type=data_type)
 
     def infer(self, data_type):
         data_loader = self._dataloader[data_type]
@@ -115,17 +74,6 @@ class Trainer(object):
         self._report(stats)
         return [''.join(self.tokenizer.convert_ids_to_tokens(x)) for x in out_put]
 
-    def save(self, file_path):
-        torch.save(self.model.cpu(), file_path)
-        self.model.to(self.device)
-        logger.info('Model save {}'.format(file_path))
-
-    def load(self, file_path):
-        if not os.path.exists(file_path):
-            return
-        self.model = torch.load(file_path)
-        self.model.to(self.device)
-
     def iteration(self, epoch, data_loader, data_type="train"):
         str_code = data_type
 
@@ -148,10 +96,11 @@ class Trainer(object):
         for step, batch in data_loader:
             # 0. batch_data will be sent into the device(GPU or cpu)
             # data = {key: value.to(self.device) for key, value in data.items()}
-            input_ids, input_mask, output_ids, labels = tuple(
+            input_ids, input_mask, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
-            loss, logits = self.model(input_ids, input_mask, labels=labels)  # prob [batch_size, seq_len, 1]
+            outputs = self.model(input_ids, attention_mask=input_mask, labels=labels)  # prob [batch_size, seq_len, 1]
+            loss, logits = outputs.loss, outputs.logits
 
             if data_type == "train":
                 loss = loss / self.opt.gradient_accumulation_steps
@@ -200,15 +149,3 @@ class Trainer(object):
                         round(stats.aprf("d_")[0], 5), round(stats.aprf("d_")[1], 5),
                         round(stats.aprf("d_")[2], 5), round(stats.aprf("d_")[3], 5))
                     )
-
-
-def _get_optimizer(model, opt):
-    param_optimizer = list(model.named_parameters())
-    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in param_optimizer if
-                    not any(nd in n for nd in no_decay)], 'weight_decay': opt.weight_decay},
-        {'params': [p for n, p in param_optimizer if
-                    any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
-
-    return optim.Adam(optimizer_grouped_parameters, lr=opt.learning_rate)

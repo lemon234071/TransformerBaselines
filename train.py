@@ -5,12 +5,11 @@ import sys
 import random
 import logging
 import argparse
+import importlib
 from pprint import pformat
 
 import numpy as np
 import torch
-
-from agents import AGENT_CLASSES, DATA_CLASSES
 
 # torch.backends.cudnn.enabled = True
 # torch.backends.cudnn.benchmark = True
@@ -40,7 +39,7 @@ parser.add_argument("--agent", type=str, required=True,
                     help="Agent name")
 
 # data
-parser.add_argument("--dataset_path", type=str, default="data/xiaowei/neg_masked/",
+parser.add_argument("--dataset_path", type=str, default="data/dstc2/",
                     help="Path or url of the dataset. If empty download accroding to dataset.")
 parser.add_argument("--save_dir", type=str, default="checkpoints")
 
@@ -48,8 +47,19 @@ parser.add_argument("--save_dir", type=str, default="checkpoints")
 parser.add_argument('--epochs', default=100000, type=int)
 parser.add_argument('--early_stop', default=3, type=int)
 
+
+def get_agent(agent_name):
+    # "agents.bert_agents.sequence_labeling"
+    trainer_module = importlib.import_module("agents." + agent_name + ".trainer")
+    trainer_class = getattr(trainer_module, "Trainer")
+    getdata_module = importlib.import_module("agents." + agent_name + ".data_process")
+    getdata_class = getattr(getdata_module, "get_datasets")
+    return trainer_class, getdata_class
+
+
 parsed = vars(parser.parse_known_args()[0])
-trainer_class = AGENT_CLASSES[parsed.get('agent')]
+# trainer_class, getdata_class = AGENT_CLASSES[parsed.get('agent')]
+trainer_class, getdata_class = get_agent(parsed.get('agent'))
 trainer_class.add_cmdline_args(parser)
 opt = parser.parse_args()
 
@@ -60,8 +70,7 @@ def main():
 
     logger.info("Arguments: %s", pformat(opt))
     trainer = trainer_class(opt, device)
-
-    datasets = DATA_CLASSES[opt.agent](opt.dataset_path)
+    datasets = getdata_class(opt.dataset_path)
     trainer.load_data(datasets)
 
     if not os.path.exists("checkpoint"):

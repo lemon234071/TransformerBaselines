@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader, TensorDataset
-from transformers import BertTokenizer, BertModel, BertConfig, BertForTokenClassification
+from transformers import BertTokenizer, BertConfig, BertForMultipleChoice
 
 from utils import Statistics
 from agents.optim_schedule import ScheduledOptim
@@ -17,11 +17,12 @@ from .data_utils import build_dataset, collate
 
 # BERT_MODEL = 'bert-base-uncased'
 BERT_MODEL = 'bert-base-chinese'
+MODEL_CLASS = BertForMultipleChoice
 
 logger = logging.getLogger(__file__)
 
 
-class Trainer(object):
+class BertTrainer(object):
 
     @classmethod
     def add_cmdline_args(cls, argparser):
@@ -37,7 +38,6 @@ class Trainer(object):
         agent.add_argument('--vocab_path', type=str, default=None)
         agent.add_argument('--checkpoint', type=str, default=BERT_MODEL)
         agent.add_argument("--hidden_size", default=256, type=int)
-        agent.add_argument("--rnn_layer", default=1, type=int)
 
         agent.add_argument("--learning_rate", default=2e-5, type=float)
         agent.add_argument("--gradient_accumulation_steps", type=int, default=1,
@@ -46,8 +46,6 @@ class Trainer(object):
                            help="Clipping gradient norm")
 
         agent.add_argument('--report_every', default=-1, type=int)
-
-        agent.add_argument('--gama', type=float, default=0.8)
 
     def __init__(self, opt, device):
 
@@ -60,7 +58,7 @@ class Trainer(object):
         self.tokenizer = BertTokenizer.from_pretrained(opt.vocab_path if opt.vocab_path else opt.checkpoint,
                                                        do_lower_case=True)
         self.config = BertConfig.from_pretrained(opt.checkpoint)
-        self.model = BertForTokenClassification.from_pretrained(opt.checkpoint, config=self.config).to(device)
+        self.model = MODEL_CLASS.from_pretrained(opt.checkpoint, config=self.config).to(device)
 
         # if torch.cuda.device_count() > 1:
         #     print("Using %d GPUS for train" % torch.cuda.device_count())

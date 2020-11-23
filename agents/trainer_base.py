@@ -1,33 +1,20 @@
 import os
-import sys
-import time
-import math
 import tqdm
 import logging
-
 import torch
-import torch.nn as nn
-from torch import optim
-from torch.utils.data import DataLoader, TensorDataset
-from transformers import BertTokenizer, BertModel, BertConfig, BertForTokenClassification
 
 from utils import Statistics
 from agents.optim_schedule import ScheduledOptim
-from .data_utils import build_dataset, collate
-
-# BERT_MODEL = 'bert-base-uncased'
-BERT_MODEL = 'bert-base-chinese'
 
 logger = logging.getLogger(__file__)
 
 
-class Trainer(object):
+class BaseTrainer(object):
 
     @classmethod
     def add_cmdline_args(cls, argparser):
-        # super(SoftMaskedBertTrainer, cls).add_cmdline_args(argparser)
         ScheduledOptim.add_cmdline_args(argparser)
-        agent = argparser.add_argument_group('SoftMaskedBertTrainer Arguments')
+        agent = argparser.add_argument_group('BaseTrainer Arguments')
         # add_common_cmdline_args(agent)
         # memory and knowledge arguments
         agent.add_argument('--batch_size', default=8, type=int)
@@ -35,9 +22,7 @@ class Trainer(object):
         agent.add_argument('--max_len', default=128, type=int)
 
         agent.add_argument('--vocab_path', type=str, default=None)
-        agent.add_argument('--checkpoint', type=str, default=BERT_MODEL)
         agent.add_argument("--hidden_size", default=256, type=int)
-        agent.add_argument("--rnn_layer", default=1, type=int)
 
         agent.add_argument("--learning_rate", default=2e-5, type=float)
         agent.add_argument("--gradient_accumulation_steps", type=int, default=1,
@@ -47,8 +32,6 @@ class Trainer(object):
 
         agent.add_argument('--report_every', default=-1, type=int)
 
-        agent.add_argument('--gama', type=float, default=0.8)
-
     def __init__(self, opt, device):
 
         self.opt = opt
@@ -57,30 +40,8 @@ class Trainer(object):
         self._dataset = {}
         self._dataloader = {}
 
-        self.tokenizer = BertTokenizer.from_pretrained(opt.vocab_path if opt.vocab_path else opt.checkpoint,
-                                                       do_lower_case=True)
-        self.config = BertConfig.from_pretrained(opt.checkpoint)
-        self.model = BertForTokenClassification.from_pretrained(opt.checkpoint, config=self.config).to(device)
-
-        # if torch.cuda.device_count() > 1:
-        #     print("Using %d GPUS for train" % torch.cuda.device_count())
-        #     self.model = nn.DataParallel(self.model, device_ids=[0,1,2])
-
-        # _optimizer = optim.Adam(self.model.parameters(), lr=opt.lr, weight_decay=opt.weight_decay)
-        _optimizer = _get_optimizer(self.model, opt)
-        self.optim_schedule = ScheduledOptim(opt, _optimizer)
-
     def load_data(self, datasets, infer=False):
-        for k, v in datasets.items():
-            # self._dataset[type] = BertDataset(self.tokenizer, data, max_len=self.opt.max_len)
-            self._dataset[k] = build_dataset(v, self.tokenizer)
-            tensor_dataset = collate(self._dataset[k], self.tokenizer.pad_token_id)
-            dataset = TensorDataset(*tensor_dataset)
-            shuffle = (k == "train") and not infer
-            self._dataloader[k] = DataLoader(dataset,
-                                             batch_size=self.opt.batch_size,
-                                             num_workers=self.opt.num_workers,
-                                             shuffle=shuffle)
+        raise NotImplementedError
 
     def train(self, epoch, data_type="train"):
         self.model.train()
@@ -91,6 +52,7 @@ class Trainer(object):
         return self.iteration(epoch, self._dataloader[data_type], data_type=data_type)
 
     def infer(self, data_type):
+        raise NotImplementedError
         data_loader = self._dataloader[data_type]
         self.model.eval()
         out_put = []
@@ -127,6 +89,7 @@ class Trainer(object):
         self.model.to(self.device)
 
     def iteration(self, epoch, data_loader, data_type="train"):
+        raise NotImplementedError
         str_code = data_type
 
         # Setting the tqdm progress bar
@@ -148,7 +111,7 @@ class Trainer(object):
         for step, batch in data_loader:
             # 0. batch_data will be sent into the device(GPU or cpu)
             # data = {key: value.to(self.device) for key, value in data.items()}
-            input_ids, input_mask, output_ids, labels = tuple(
+            input_ids, input_mask, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
             loss, logits = self.model(input_ids, input_mask, labels=labels)  # prob [batch_size, seq_len, 1]
@@ -179,6 +142,7 @@ class Trainer(object):
         return stats.xent()
 
     def _stats(self, stats: Statistics, loss, d_scores, target):
+        raise NotImplementedError
         d_pred = d_scores.argmax(dim=-1)
         non_padding = target.ne(-100)
         num_non_padding = non_padding.sum().item()
@@ -195,6 +159,7 @@ class Trainer(object):
         #              tp, fp, tn, fn)
 
     def _report(self, stats: Statistics):
+        raise NotImplementedError
         logger.info("avg_loss: {} ".format(round(stats.xent(), 5)) +
                     "acc: {}, prec: {}, recall: {}, f1: {}".format(
                         round(stats.aprf("d_")[0], 5), round(stats.aprf("d_")[1], 5),
@@ -202,13 +167,4 @@ class Trainer(object):
                     )
 
 
-def _get_optimizer(model, opt):
-    param_optimizer = list(model.named_parameters())
-    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in param_optimizer if
-                    not any(nd in n for nd in no_decay)], 'weight_decay': opt.weight_decay},
-        {'params': [p for n, p in param_optimizer if
-                    any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
 
-    return optim.Adam(optimizer_grouped_parameters, lr=opt.learning_rate)
