@@ -114,7 +114,7 @@ class Trainer(BaseTrainer):
                     self.optim_schedule.zero_grad()
 
             # sta
-            #self._stats(stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
+            # self._stats(stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
             self._stats(stats, loss.item(), generated, labels)
             # if data_type == "train" and self.opt.report_every > 0 and step % self.opt.report_every == 0:
             #     post_fix = {
@@ -151,5 +151,6 @@ class Trainer(BaseTrainer):
     def _report(self, stats: Statistics):
         logger.info(
             "avg_loss: {} ".format(round(stats.xent(), 5)) +
-            "acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2))
+            "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
+            "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2))
         )
