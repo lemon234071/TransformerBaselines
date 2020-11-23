@@ -102,7 +102,8 @@ class Trainer(BaseTrainer):
                                  return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
-            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1))
+            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1,
+                                            min_length=labels.size(1) - 1)
             # dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
             if data_type == "train":
@@ -138,7 +139,7 @@ class Trainer(BaseTrainer):
         metrics = {
             "n_correct": preds.eq(target).masked_select(non_padding).sum().item(),
             "n_correct_utt": preds.eq(target).masked_select(non_padding).all().float().item(),
-            "n_utterances": target.size(0).float().item()
+            "n_utterances": target.size(0)
             # "d_tp": (preds.eq(1) & target.eq(1)).masked_select(non_padding).sum().item(),
             # "d_fp": (preds.eq(1) & target.eq(0)).masked_select(non_padding).sum().item(),
             # "d_tn": (preds.eq(0) & target.eq(0)).masked_select(non_padding).sum().item(),
