@@ -75,7 +75,7 @@ def main():
 
     if not os.path.exists("checkpoint"):
         os.mkdir("checkpoint")
-    best_checkpoint = "checkpoint/" + trainer_class.__name__ + "_" + \
+    best_checkpoint = "checkpoint/" + parsed.get('agent') + "_" + \
                       opt.dataset_path.replace("/", "&&&").replace("\\", "&&&") + '_best_model.pt'
     best_loss = 10000
     patience = 0

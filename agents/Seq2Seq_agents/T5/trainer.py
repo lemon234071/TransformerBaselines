@@ -61,22 +61,17 @@ class Trainer(BaseTrainer):
                                 desc="%s" % 'Inference:',
                                 total=len(data_loader),
                                 bar_format="{l_bar}{r_bar}")
-        stats = Statistics()
+        # stats = Statistics()
         for step, batch in data_loader:
-            # 0. batch_data will be sent into the device(GPU or cpu)
-            input_ids, input_mask, output_idsz, labels = tuple(
+            input_ids, input_mask, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
+            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1))
+            dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            out_put.extend(dec)
+            # self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)
 
-            loss, logits = self.model(input_ids, input_mask, labels=labels)  # prob [batch_size, seq_len, 1]
-
-            self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)
-
-            label_mask = logits.softmax(dim=-1).argmax(dim=-1).bool()
-            input_ids[label_mask] = self.tokenizer.mask_token_id
-            out_put.extend(
-                [line[line_mask.bool()].cpu().tolist()[1:-1] for line, line_mask in zip(input_ids, input_mask)])
-        self._report(stats)
-        return [''.join(self.tokenizer.convert_ids_to_tokens(x)) for x in out_put]
+        # self._report(stats)
+        return out_put
 
     def iteration(self, epoch, data_loader, data_type="train"):
         str_code = data_type
@@ -107,6 +102,9 @@ class Trainer(BaseTrainer):
                                  return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
+            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1))
+            # dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+
             if data_type == "train":
                 loss = loss / self.opt.gradient_accumulation_steps
                 loss.backward(retain_graph=True)
@@ -116,7 +114,8 @@ class Trainer(BaseTrainer):
                     self.optim_schedule.zero_grad()
 
             # sta
-            self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)
+            #self._stats(stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
+            self._stats(stats, loss.item(), generated, labels)
             # if data_type == "train" and self.opt.report_every > 0 and step % self.opt.report_every == 0:
             #     post_fix = {
             #         "epoch": epoch,
@@ -130,15 +129,16 @@ class Trainer(BaseTrainer):
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code))
         self._report(stats)
-        return stats.xent()
+        return round(stats.xent(), 5)
 
-    def _stats(self, stats: Statistics, loss, scores, target):
-        preds = scores.argmax(dim=-1)
+    def _stats(self, stats: Statistics, loss, preds, target):
         non_padding = target.ne(-100)
         num_non_padding = non_padding.sum().item()
 
         metrics = {
-            "n_correct": preds.eq(target).masked_select(non_padding).sum().item()
+            "n_correct": preds.eq(target).masked_select(non_padding).sum().item(),
+            "n_correct_utt": preds.eq(target).masked_select(non_padding).all().float().item(),
+            "n_utterances": target.size(0).float().item()
             # "d_tp": (preds.eq(1) & target.eq(1)).masked_select(non_padding).sum().item(),
             # "d_fp": (preds.eq(1) & target.eq(0)).masked_select(non_padding).sum().item(),
             # "d_tn": (preds.eq(0) & target.eq(0)).masked_select(non_padding).sum().item(),
@@ -151,5 +151,5 @@ class Trainer(BaseTrainer):
     def _report(self, stats: Statistics):
         logger.info(
             "avg_loss: {} ".format(round(stats.xent(), 5)) +
-            "acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2))
+            "acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2))
         )
