@@ -96,7 +96,7 @@ def main():
         best_loss = 10000
         patience = 0
         for e in range(opt.epochs):
-            #trainer.train(e)
+            trainer.train(e)
             val_loss = trainer.evaluate(e, "valid")
             if best_loss > val_loss:
                 best_loss = val_loss
