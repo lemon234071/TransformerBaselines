@@ -5,6 +5,7 @@ import platform
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import T5Tokenizer, T5Config, T5ForConditionalGeneration
+from sklearn.metrics import recall_score, f1_score, accuracy_score
 
 from utils import Statistics
 from agents.trainer_base import BaseTrainer
@@ -140,11 +141,20 @@ class Trainer(BaseTrainer):
         non_padding = target.ne(-100)
         num_non_padding = non_padding.sum().item()
 
+        preds_dec = self.tokenizer.batch_decode(preds, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        target_forgen = target.clone()
+        target_forgen[target == -100] = 0
+        labels_dec = self.tokenizer.batch_decode(target_forgen, skip_special_tokens=True,
+                                                 clean_up_tokenization_spaces=False)
+        assert len(preds_dec) == len(labels_dec)
+
         metrics = {
             "n_correct": preds.eq(target).masked_select(non_padding).sum().item(),
             "n_correct_utt": sum(x.eq(y).masked_select(z).all().float().item()
                                  for x, y, z in zip(preds, target, non_padding)),
-            "n_utterances": target.size(0)
+            "n_utterances": target.size(0),
+            "preds": preds_dec,
+            "labels": labels_dec
             # "d_tp": (preds.eq(1) & target.eq(1)).masked_select(non_padding).sum().item(),
             # "d_fp": (preds.eq(1) & target.eq(0)).masked_select(non_padding).sum().item(),
             # "d_tn": (preds.eq(0) & target.eq(0)).masked_select(non_padding).sum().item(),
@@ -158,5 +168,6 @@ class Trainer(BaseTrainer):
         logger.info(
             "avg_loss: {} ".format(round(stats.xent(), 5)) +
             "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
-            "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2))
+            "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2)) +
+            "utterances f1: {}".format(round(f1_score(stats.labels, stats.preds, average="micro"), 2))
         )

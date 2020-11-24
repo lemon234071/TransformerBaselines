@@ -71,11 +71,17 @@ class Statistics(object):
 
         for k, v in metrics.items():
             if not hasattr(self, k):
-                setattr(self, k, 0)
+                if isinstance(v, int):
+                    setattr(self, k, 0)
+                elif isinstance(v, list):
+                    setattr(self, k, [])
             setattr(self, k, getattr(self, k) + v)
 
             if not hasattr(self, "step_" + k):
-                setattr(self, "step_" + k, 0)
+                if isinstance(v, int):
+                    setattr(self, "step_" + k, 0)
+                elif isinstance(v, list):
+                    setattr(self, "step_" + k, [])
             setattr(self, "step_" + k, getattr(self, "step_" + k) + v)
 
     # def report(self):
