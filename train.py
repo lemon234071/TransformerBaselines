@@ -43,7 +43,7 @@ parser.add_argument("--agent", type=str, required=True,
 # data
 parser.add_argument("--dataset_path", type=str, default="data/dstc2/",
                     help="Path or url of the dataset. If empty download accroding to dataset.")
-parser.add_argument("--save_dir", type=str, default="checkpoint")
+parser.add_argument("--save_dir", type=str, default="checkpoint/")
 parser.add_argument('--save_name', type=str, default="")
 
 # training
@@ -88,7 +88,7 @@ def main():
     if opt.mode == "infer":
         if not os.path.exists(opt.checkpoint):
             opt.checkpoint = best_checkpoint
-        # trainer.load(model_path)
+        trainer.load(opt.checkpoint)
         result = trainer.infer("test")
         if opt.result_path:
             save_json(result, opt.result_path)
