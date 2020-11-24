@@ -71,14 +71,14 @@ class Statistics(object):
 
         for k, v in metrics.items():
             if not hasattr(self, k):
-                if isinstance(v, int):
+                if isinstance(v, int) or isinstance(v, float):
                     setattr(self, k, 0)
                 elif isinstance(v, list):
                     setattr(self, k, [])
             setattr(self, k, getattr(self, k) + v)
 
             if not hasattr(self, "step_" + k):
-                if isinstance(v, int):
+                if isinstance(v, int) or isinstance(v, float):
                     setattr(self, "step_" + k, 0)
                 elif isinstance(v, list):
                     setattr(self, "step_" + k, [])

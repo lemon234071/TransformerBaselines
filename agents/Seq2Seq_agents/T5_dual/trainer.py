@@ -97,12 +97,21 @@ class Trainer(BaseTrainer):
         for step, batch in data_loader:
             # 0. batch_data will be sent into the device(GPU or cpu)
             # data = {key: value.to(self.device) for key, value in data.items()}
-            input_ids, input_mask, labels = tuple(
+            input_ids, input_mask, labels, output_mask = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
             outputs = self.model(input_ids, attention_mask=input_mask, labels=labels,
                                  return_dict=True)  # prob [batch_size, seq_len, 1]
-            loss, logits = outputs.loss, outputs.logits
+            loss = outputs.loss
+
+            reverse_input_ids = labels.clone()
+            reverse_input_ids[reverse_input_ids == -100] = self.tokenizer.pad_token_id
+            reverse_labels = input_ids.clone()
+            reverse_labels[reverse_labels == self.tokenizer.pad_token_id] = -100
+            reverse_outputs = self.model(reverse_input_ids, attention_mask=output_mask, labels=reverse_labels,
+                                 return_dict=True)  # prob [batch_size, seq_len, 1]
+            reverse_loss = reverse_outputs.loss
+            loss += reverse_loss
 
             generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
             # dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
