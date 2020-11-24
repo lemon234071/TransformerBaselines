@@ -11,6 +11,8 @@ from pprint import pformat
 import numpy as np
 import torch
 
+from utils import *
+
 # torch.backends.cudnn.enabled = True
 # torch.backends.cudnn.benchmark = True
 
@@ -41,12 +43,16 @@ parser.add_argument("--agent", type=str, required=True,
 # data
 parser.add_argument("--dataset_path", type=str, default="data/dstc2/",
                     help="Path or url of the dataset. If empty download accroding to dataset.")
-parser.add_argument("--save_dir", type=str, default="checkpoints")
+parser.add_argument("--save_dir", type=str, default="checkpoint")
 parser.add_argument('--save_name', type=str, default="")
 
 # training
 parser.add_argument('--epochs', default=100000, type=int)
 parser.add_argument('--early_stop', default=3, type=int)
+parser.add_argument('--mode', type=str, default="train")
+
+# model
+parser.add_argument('--result_path', type=str, default="")
 
 
 def get_agent(agent_name):
@@ -76,32 +82,41 @@ def main():
 
     if not os.path.exists("checkpoint"):
         os.mkdir("checkpoint")
-    best_checkpoint = "checkpoint/" + opt.save_name + "&&&" + parsed.get('agent') + "_" + \
+    best_checkpoint = opt.save_dir + opt.save_name + "&&&" + parsed.get('agent') + "_" + \
                       opt.dataset_path.replace("/", "&&&").replace("\\", "&&&") + '_best_model.pt'
-    best_loss = 10000
-    patience = 0
-    for e in range(opt.epochs):
-        trainer.train(e)
-        val_loss = trainer.evaluate(e, "valid")
-        if best_loss > val_loss:
-            best_loss = val_loss
-            trainer.save(best_checkpoint)
-            logger.info('Best val loss {} at epoch {}'.format(best_loss, e))
-            test_loss = trainer.evaluate(e, "test")
-            patience = 0
-        else:
-            patience += 1
-            if patience > opt.early_stop:
-                break
 
-        # trainer.load(best_checkpoint)
+    if opt.mode == "infer":
+        if not os.path.exists(opt.checkpoint):
+            opt.checkpoint = best_checkpoint
+        # trainer.load(model_path)
+        result = trainer.infer("test")
+        if opt.result_path:
+            save_json(result, opt.result_path)
+    else:
+        best_loss = 10000
+        patience = 0
+        for e in range(opt.epochs):
+            trainer.train(e)
+            val_loss = trainer.evaluate(e, "valid")
+            if best_loss > val_loss:
+                best_loss = val_loss
+                trainer.save(best_checkpoint)
+                logger.info('Best val loss {} at epoch {}'.format(best_loss, e))
+                test_loss = trainer.evaluate(e, "test")
+                patience = 0
+            else:
+                patience += 1
+                if patience > opt.early_stop:
+                    break
 
-        # for i in trainer.inference(val):
-        #     print(i)
-        #     print('\n')
-        # if do_test:
-        #     final_test_ppl = manager.evaluate('test')
-        #     print('Test PPL: {:.4f}'.format(final_test_ppl))
+            # trainer.load(best_checkpoint)
+
+            # for i in trainer.inference(val):
+            #     print(i)
+            #     print('\n')
+            # if do_test:
+            #     final_test_ppl = manager.evaluate('test')
+            #     print('Test PPL: {:.4f}'.format(final_test_ppl))
 
 
 if __name__ == '__main__':

@@ -84,7 +84,7 @@ class BaseTrainer(object):
 
     def load(self, file_path):
         if not os.path.exists(file_path):
-            return
+            raise Exception("%s does not exists" % file_path)
         self.model = torch.load(file_path)
         self.model.to(self.device)
 
@@ -165,6 +165,3 @@ class BaseTrainer(object):
                         round(stats.aprf("d_")[0], 5), round(stats.aprf("d_")[1], 5),
                         round(stats.aprf("d_")[2], 5), round(stats.aprf("d_")[3], 5))
                     )
-
-
-
