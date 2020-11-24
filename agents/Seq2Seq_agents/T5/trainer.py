@@ -142,7 +142,8 @@ class Trainer(BaseTrainer):
 
         metrics = {
             "n_correct": preds.eq(target).masked_select(non_padding).sum().item(),
-            "n_correct_utt": preds.eq(target).masked_select(non_padding).all().float().item(),
+            "n_correct_utt": sum(x.eq(y).masked_select(z).all().float().item()
+                                 for x, y, z in zip(preds, target, non_padding)),
             "n_utterances": target.size(0)
             # "d_tp": (preds.eq(1) & target.eq(1)).masked_select(non_padding).sum().item(),
             # "d_fp": (preds.eq(1) & target.eq(0)).masked_select(non_padding).sum().item(),
