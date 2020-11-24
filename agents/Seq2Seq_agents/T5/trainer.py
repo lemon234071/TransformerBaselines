@@ -5,7 +5,7 @@ import platform
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import T5Tokenizer, T5Config, T5ForConditionalGeneration
-from sklearn.metrics import recall_score, f1_score, accuracy_score
+from sklearn.metrics import recall_score, f1_score, accuracy_score, precision_score
 
 from utils import Statistics
 from agents.trainer_base import BaseTrainer
@@ -169,5 +169,7 @@ class Trainer(BaseTrainer):
             "avg_loss: {} ".format(round(stats.xent(), 5)) +
             "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
             "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2)) +
+            "utterances prec: {}".format(round(precision_score(stats.labels, stats.preds, average="micro"), 2)) +
+            "utterances recall: {}".format(round(recall_score(stats.labels, stats.preds, average="micro"), 2)) +
             "utterances f1: {}".format(round(f1_score(stats.labels, stats.preds, average="micro"), 2))
         )
