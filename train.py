@@ -41,7 +41,7 @@ parser.add_argument("--agent", type=str, required=True,
                     help="Agent name")
 
 # data
-parser.add_argument("--dataset_path", type=str, default="data/dstc2/",
+parser.add_argument("--dataset_path", type=str, default="data/catslu/map/",
                     help="Path or url of the dataset. If empty download accroding to dataset.")
 parser.add_argument("--save_dir", type=str, default="checkpoint/")
 parser.add_argument('--save_name', type=str, default="")
