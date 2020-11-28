@@ -107,13 +107,12 @@ class Trainer(BaseTrainer):
                                  return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
-            generated = None if data_type == "train" else self.model.generate(input_ids, attention_mask=input_mask)
-            # generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
+            generated = None if data_type == "train" else self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
             # dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-            # generated = generated[:, 1:]
-            # if generated.size(1) < labels.size(1):
-            #     generated = pad_sequence([labels[0]] + [one for one in generated], batch_first=True,
-            #                              padding_value=self.tokenizer.pad_token_id)[1:]
+            generated = generated[:, 1:]
+            if generated.size(1) < labels.size(1):
+                generated = pad_sequence([labels[0]] + [one for one in generated], batch_first=True,
+                                         padding_value=self.tokenizer.pad_token_id)[1:]
 
             if data_type == "train":
                 loss = loss / self.opt.gradient_accumulation_steps
@@ -177,10 +176,10 @@ class Trainer(BaseTrainer):
             FP += len(pred_semantics - anno_semantics)
 
         metrics = {
-            # "n_correct": preds.eq(target).masked_select(non_padding).sum().item(),
-            # "n_correct_utt": sum(x.eq(y).masked_select(z).all().float().item()
-            #                      for x, y, z in zip(preds, target, non_padding)),
-            # "n_utterances": target.size(0),
+            "n_correct": preds.eq(target).masked_select(non_padding).sum().item(),
+            "n_correct_utt": sum(x.eq(y).masked_select(z).all().float().item()
+                                 for x, y, z in zip(preds, target, non_padding)),
+            "n_utterances": target.size(0),
             "TP": TP,
             "FN": FN,
             "FP": FP,
@@ -192,8 +191,6 @@ class Trainer(BaseTrainer):
             # "d_fn": (preds.eq(0) & target.eq(1)).masked_select(non_padding).sum().item(),
         }
         stats.update(loss * num_non_padding, num_non_padding, metrics)
-        # stats.update(loss * num_non_padding, 0, d_num_correct, num_non_padding,
-        #              tp, fp, tn, fn)
 
     def _report(self, stats: Statistics, mode):
         if mode == "train":
@@ -201,18 +198,10 @@ class Trainer(BaseTrainer):
         else:
             logger.info(
                 "avg_loss: {} ".format(round(stats.xent(), 5)) +
-                # "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
-                # "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2)) +
+                "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
+                "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2)) +
                 "Precision %.2f" % (100 * stats.TP / (stats.TP + stats.FP)) +
                 "Recall %.2f" % (100 * stats.TP / (stats.TP + stats.FN)) +
                 "F1-score %.2f" % (100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP)) +
                 "Joint accuracy %.2f" % (100 * stats.correct_utter_number / stats.total_utter_number)
             )
-        # prec, recall, f1, _ = precision_recall_fscore_support(stats.labels, stats.preds, average="micro")
-        # logger.info(
-        #     "avg_loss: {} ".format(round(stats.xent(), 5)) +
-        #     "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
-        #     "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2)) +
-        #     "precision: {}, recall {}, F1{}".format(prec, recall, f1)
-        # )
-        # precision_recall_fscore_support
