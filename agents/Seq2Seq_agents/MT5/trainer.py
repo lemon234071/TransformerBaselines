@@ -1,3 +1,4 @@
+import os
 import tqdm
 import logging
 import platform
@@ -5,7 +6,6 @@ import platform
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import T5Tokenizer, MT5Config, MT5ForConditionalGeneration
-from sklearn.metrics import precision_recall_fscore_support
 
 from utils import Statistics
 from agents.trainer_base import BaseTrainer
@@ -35,6 +35,9 @@ class Trainer(BaseTrainer):
         self.model = MT5ForConditionalGeneration(self.config).to(device) \
             if platform.system() == 'Windows' else \
             MT5ForConditionalGeneration.from_pretrained(opt.checkpoint, config=self.config).to(device)
+        # raise Exception("handle the embedding")
+        # if os.path.isdir(opt.checkpoint):
+        #     self.model.
         # if torch.cuda.device_count() > 1:
         #     print("Using %d GPUS for train" % torch.cuda.device_count())
         #     self.model = nn.DataParallel(self.model, device_ids=[0,1,2])
@@ -104,12 +107,13 @@ class Trainer(BaseTrainer):
                                  return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
-            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
+            generated = None if data_type == "train" else self.model.generate(input_ids, attention_mask=input_mask)
+            # generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
             # dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-            generated = generated[:, 1:]
-            if generated.size(1) < labels.size(1):
-                generated = pad_sequence([labels[0]] + [one for one in generated], batch_first=True,
-                                         padding_value=self.tokenizer.pad_token_id)[1:]
+            # generated = generated[:, 1:]
+            # if generated.size(1) < labels.size(1):
+            #     generated = pad_sequence([labels[0]] + [one for one in generated], batch_first=True,
+            #                              padding_value=self.tokenizer.pad_token_id)[1:]
 
             if data_type == "train":
                 loss = loss / self.opt.gradient_accumulation_steps
@@ -121,7 +125,7 @@ class Trainer(BaseTrainer):
 
             # sta
             # self._stats(stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
-            self._stats(stats, loss.item(), generated, labels, mode=data_type)
+            self._stats(stats, loss.item(), generated, labels)
             # if data_type == "train" and self.opt.report_every > 0 and step % self.opt.report_every == 0:
             #     post_fix = {
             #         "epoch": epoch,
@@ -137,10 +141,10 @@ class Trainer(BaseTrainer):
         self._report(stats, mode=data_type)
         return round(stats.xent(), 5)
 
-    def _stats(self, stats: Statistics, loss, preds, target, mode):
+    def _stats(self, stats: Statistics, loss, preds, target):
         non_padding = target.ne(-100)
         num_non_padding = non_padding.sum().item()
-        if mode == "train":
+        if preds is None:
             stats.update(loss * num_non_padding, num_non_padding, {})
             return
 

@@ -168,10 +168,11 @@ class Trainer(BaseTrainer):
 
     def _report(self, stats: Statistics):
         prec, recall, f1, _ = precision_recall_fscore_support(stats.labels, stats.preds, average="micro")
+        (prec, recall, f1) = (round(100 * x, 2) for x in [prec, recall, f1])
         logger.info(
             "avg_loss: {} ".format(round(stats.xent(), 5)) +
             "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
             "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2)) +
-            "precision: {}, recall {}, F1{}".format(prec, recall, f1)
+            "precision: {}, recall {}, F1 {}".format(prec, recall, f1)
         )
         # precision_recall_fscore_support

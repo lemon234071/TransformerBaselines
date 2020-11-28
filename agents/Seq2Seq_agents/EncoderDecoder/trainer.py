@@ -1,11 +1,11 @@
+import os
 import tqdm
 import logging
 import platform
 
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, TensorDataset
-from transformers import T5Tokenizer, T5Config, T5ForConditionalGeneration
-from sklearn.metrics import precision_recall_fscore_support
+from transformers import BertConfig, EncoderDecoderConfig, EncoderDecoderModel, BertTokenizer
 
 from utils import Statistics
 from agents.trainer_base import BaseTrainer
@@ -20,21 +20,40 @@ class Trainer(BaseTrainer):
     @classmethod
     def add_cmdline_args(cls, argparser):
         super(Trainer, cls).add_cmdline_args(argparser)
-        agent = argparser.add_argument_group('T5 Arguments')
+        agent = argparser.add_argument_group('EncodeDecoder Arguments')
         # add_common_cmdline_args(agent)
         # memory and knowledge arguments
 
-        agent.add_argument('--checkpoint', type=str, default="t5-small")
+        agent.add_argument('--checkpoint', type=str, default="bert-base-chinese")
 
     def __init__(self, opt, device):
         super(Trainer, self).__init__(opt, device)
-        self.tokenizer = T5Tokenizer.from_pretrained(opt.vocab_path
-                                                     if opt.vocab_path else opt.checkpoint, do_lower_case=True)
-        self.config = T5Config.from_pretrained(opt.checkpoint)
+        self.tokenizer = BertTokenizer.from_pretrained(opt.vocab_path
+                                                       if opt.vocab_path else opt.checkpoint, do_lower_case=True)
 
-        self.model = T5ForConditionalGeneration(self.config).to(device) \
-            if platform.system() == 'Windows' else \
-            T5ForConditionalGeneration.from_pretrained(opt.checkpoint, config=self.config).to(device)
+        if platform.system() == 'Windows':
+            config_encoder = BertConfig.from_pretrained(opt.checkpoint)
+            config_decoder = BertConfig.from_pretrained(opt.checkpoint)
+            config = EncoderDecoderConfig.from_encoder_decoder_configs(config_encoder, config_decoder)
+            config.eos_token_id = self.tokenizer.sep_token_id
+            config.pad_token_id = self.tokenizer.pad_token_id
+            config.bos_token_id = self.tokenizer.cls_token_id
+            self.model = EncoderDecoderModel(config).to(device)
+            # self.model.config.decoder.is_decoder = True
+            # self.model.config.decoder.add_cross_attention = True
+
+            # >> > model.save_pretrained('my-model')
+            # >> > encoder_decoder_config = EncoderDecoderConfig.from_pretrained('my-model')
+            # >> > model = EncoderDecoderModel.from_pretrained('my-model', config=encoder_decoder_config)
+        else:
+            self.model = EncoderDecoderModel.from_encoder_decoder_pretrained(opt.checkpoint, opt.checkpoint).to(device)
+
+        assert self.model.config.eos_token_id is not None
+        assert self.model.config.pad_token_id is not None
+        assert self.model.config.bos_token_id is not None
+        # >> > model.save_pretrained("bert2bert")
+        # >> > model = EncoderDecoderModel.from_pretrained("bert2bert")
+
         # if torch.cuda.device_count() > 1:
         #     print("Using %d GPUS for train" % torch.cuda.device_count())
         #     self.model = nn.DataParallel(self.model, device_ids=[0,1,2])
@@ -97,28 +116,22 @@ class Trainer(BaseTrainer):
         for step, batch in data_loader:
             # 0. batch_data will be sent into the device(GPU or cpu)
             # data = {key: value.to(self.device) for key, value in data.items()}
-            input_ids, input_mask, labels, output_mask = tuple(
+            input_ids, input_mask, labels, deocderin_mask = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
-
-            outputs = self.model(input_ids, attention_mask=input_mask, labels=labels,
+            decoderin = labels.clone()
+            decoderin[decoderin == -100] = self.tokenizer.pad_token_id
+            outputs = self.model(input_ids, attention_mask=input_mask, decoder_input_ids=decoderin,
+                                 decoder_attention_mask=deocderin_mask, labels=labels,
                                  return_dict=True)  # prob [batch_size, seq_len, 1]
-            loss = outputs.loss
+            loss, logits = outputs.loss, outputs.logits
 
-            reverse_input_ids = labels.clone()
-            reverse_input_ids[reverse_input_ids == -100] = self.tokenizer.pad_token_id
-            reverse_labels = input_ids.clone()
-            reverse_labels[reverse_labels == self.tokenizer.pad_token_id] = -100
-            reverse_outputs = self.model(reverse_input_ids, attention_mask=output_mask, labels=reverse_labels,
-                                 return_dict=True)  # prob [batch_size, seq_len, 1]
-            reverse_loss = reverse_outputs.loss
-            loss += reverse_loss
-
-            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
+            generated = None if data_type == "train" else self.model.generate(input_ids, attention_mask=input_mask)
+            # generated = self.model.generate(input_ids, attention_mask=input_mask, decoder_start_token_id=self.tokenizer.cls_token_id, max_length=labels.size(1) + 1)
             # dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-            generated = generated[:, 1:]
-            if generated.size(1) < labels.size(1):
-                generated = pad_sequence([labels[0]] + [one for one in generated], batch_first=True,
-                                         padding_value=self.tokenizer.pad_token_id)[1:]
+            # generated = generated[:, 1:]
+            # if generated.size(1) < labels.size(1):
+            #     generated = pad_sequence([labels[0]] + [one for one in generated], batch_first=True,
+            #                              padding_value=self.tokenizer.pad_token_id)[1:]
 
             if data_type == "train":
                 loss = loss / self.opt.gradient_accumulation_steps
@@ -143,29 +156,54 @@ class Trainer(BaseTrainer):
             #     sys.stdout.flush()
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code))
-        self._report(stats)
+        self._report(stats, mode=data_type)
         return round(stats.xent(), 5)
 
     def _stats(self, stats: Statistics, loss, preds, target):
         non_padding = target.ne(-100)
         num_non_padding = non_padding.sum().item()
+        if preds is None:
+            stats.update(loss * num_non_padding, num_non_padding, {})
+            return
 
-        # preds_dec = self.tokenizer.batch_decode(preds, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-        # target_forgen = target.clone()
-        # target_forgen[target == -100] = 0
-        # labels_dec = self.tokenizer.batch_decode(target_forgen, skip_special_tokens=True,
-        #                                          clean_up_tokenization_spaces=False)
-        preds_dec = ["-".join([str(token) for token in seq if token != 0]) for seq in preds.tolist()]
-        labels_dec = ["-".join([str(token) for token in seq if token != -100]) for seq in target.tolist()]
+        preds_dec = self.tokenizer.batch_decode(preds, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        target_forgen = target.clone()
+        target_forgen[target == -100] = 0
+        labels_dec = self.tokenizer.batch_decode(target_forgen, skip_special_tokens=True,
+                                                 clean_up_tokenization_spaces=False)
+        # preds_dec = ["-".join([str(token) for token in seq if token != 0]) for seq in preds.tolist()]
+        # labels_dec = ["-".join([str(token) for token in seq if token != -100]) for seq in target.tolist()]
         assert len(preds_dec) == len(labels_dec)
+        total_utter_number = 0
+        correct_utter_number = 0
+        TP, FP, FN = 0, 0, 0
+        for pred_utterance, anno_utterance in zip(preds_dec, labels_dec):
+            x = pred_utterance[pred_utterance.index(":") + 2:] if pred_utterance.index(":") + 2 < len(
+                pred_utterance) else pred_utterance
+            y = anno_utterance[anno_utterance.index(":") + 2:]
+            anno_semantics = [one.split("-") for one in x.split(";")]
+            pred_semantics = [one.split("-") for one in y.split(";")]
+            anno_semantics = set([tuple(item) for item in anno_semantics])
+            pred_semantics = set([tuple(item) for item in pred_semantics])
+
+            total_utter_number += 1
+            if anno_semantics == pred_semantics:
+                correct_utter_number += 1
+
+            TP += len(anno_semantics & pred_semantics)
+            FN += len(anno_semantics - pred_semantics)
+            FP += len(pred_semantics - anno_semantics)
 
         metrics = {
-            "n_correct": preds.eq(target).masked_select(non_padding).sum().item(),
-            "n_correct_utt": sum(x.eq(y).masked_select(z).all().float().item()
-                                 for x, y, z in zip(preds, target, non_padding)),
-            "n_utterances": target.size(0),
-            "preds": preds_dec,
-            "labels": labels_dec
+            # "n_correct": preds.eq(target).masked_select(non_padding).sum().item(),
+            # "n_correct_utt": sum(x.eq(y).masked_select(z).all().float().item()
+            #                      for x, y, z in zip(preds, target, non_padding)),
+            # "n_utterances": target.size(0),
+            "TP": TP,
+            "FN": FN,
+            "FP": FP,
+            "correct_utter_number": correct_utter_number,
+            "total_utter_number": total_utter_number
             # "d_tp": (preds.eq(1) & target.eq(1)).masked_select(non_padding).sum().item(),
             # "d_fp": (preds.eq(1) & target.eq(0)).masked_select(non_padding).sum().item(),
             # "d_tn": (preds.eq(0) & target.eq(0)).masked_select(non_padding).sum().item(),
@@ -175,13 +213,24 @@ class Trainer(BaseTrainer):
         # stats.update(loss * num_non_padding, 0, d_num_correct, num_non_padding,
         #              tp, fp, tn, fn)
 
-    def _report(self, stats: Statistics):
-        prec, recall, f1, _ = precision_recall_fscore_support(stats.labels, stats.preds, average="micro")
-        (prec, recall, f1) = (round(100*x, 2) for x in [prec, recall, f1])
-        logger.info(
-            "avg_loss: {} ".format(round(stats.xent(), 5)) +
-            "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
-            "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2)) +
-            "precision: {}, recall {}, F1 {}".format(prec, recall, f1)
-        )
+    def _report(self, stats: Statistics, mode):
+        if mode == "train":
+            logger.info("avg_loss: {} ".format(round(stats.xent(), 5)))
+        else:
+            logger.info(
+                "avg_loss: {} ".format(round(stats.xent(), 5)) +
+                # "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
+                # "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2)) +
+                "Precision %.2f" % (100 * stats.TP / (stats.TP + stats.FP)) +
+                "Recall %.2f" % (100 * stats.TP / (stats.TP + stats.FN)) +
+                "F1-score %.2f" % (100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP)) +
+                "Joint accuracy %.2f" % (100 * stats.correct_utter_number / stats.total_utter_number)
+            )
+        # prec, recall, f1, _ = precision_recall_fscore_support(stats.labels, stats.preds, average="micro")
+        # logger.info(
+        #     "avg_loss: {} ".format(round(stats.xent(), 5)) +
+        #     "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
+        #     "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2)) +
+        #     "precision: {}, recall {}, F1{}".format(prec, recall, f1)
+        # )
         # precision_recall_fscore_support
