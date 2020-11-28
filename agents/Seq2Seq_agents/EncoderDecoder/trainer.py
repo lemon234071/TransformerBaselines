@@ -86,7 +86,7 @@ class Trainer(BaseTrainer):
         for step, batch in data_loader:
             input_ids, input_mask, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
-            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
+            generated = self.model.generate(input_ids, attention_mask=input_mask)
             dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
             out_put.extend(dec)
             # self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)

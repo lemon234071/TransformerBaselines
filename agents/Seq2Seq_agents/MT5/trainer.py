@@ -70,7 +70,7 @@ class Trainer(BaseTrainer):
         for step, batch in data_loader:
             input_ids, input_mask, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
-            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
+            generated = self.model.generate(input_ids, attention_mask=input_mask)
             dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
             out_put.extend(dec)
             # self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)
@@ -159,8 +159,9 @@ class Trainer(BaseTrainer):
         correct_utter_number = 0
         TP, FP, FN = 0, 0, 0
         for pred_utterance, anno_utterance in zip(preds_dec, labels_dec):
-            x = pred_utterance[pred_utterance.index(":") + 2:] if pred_utterance.index(":") + 2 < len(
-                pred_utterance) else pred_utterance
+            x = pred_utterance
+            if ":" in x and pred_utterance.index(":") + 2 < len(pred_utterance):
+                x = pred_utterance[pred_utterance.index(":") + 2:]
             y = anno_utterance[anno_utterance.index(":") + 2:]
             anno_semantics = [one.split("-") for one in x.split(";")]
             pred_semantics = [one.split("-") for one in y.split(";")]
