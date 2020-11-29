@@ -84,7 +84,7 @@ class Trainer(BaseTrainer):
                                 bar_format="{l_bar}{r_bar}")
         # stats = Statistics()
         for step, batch in data_loader:
-            input_ids, input_mask, labels = tuple(
+            input_ids, input_mask, labels, deocderin_mask = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
             generated = self.model.generate(input_ids, attention_mask=input_mask)
             dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
@@ -177,8 +177,8 @@ class Trainer(BaseTrainer):
         correct_utter_number = 0
         TP, FP, FN = 0, 0, 0
         for pred_utterance, anno_utterance in zip(preds_dec, labels_dec):
-            x = pred_utterance
-            if ":" in x and pred_utterance.index(":") + 2 < len(pred_utterance):
+            x = ""
+            if ":" in pred_utterance and pred_utterance.index(":") + 2 < len(pred_utterance):
                 x = pred_utterance[pred_utterance.index(":") + 2:]
             y = anno_utterance[anno_utterance.index(":") + 2:]
             anno_semantics = [one.split("-") for one in x.split(";")]

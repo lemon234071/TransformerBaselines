@@ -107,7 +107,8 @@ class Trainer(BaseTrainer):
                                  return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
-            generated = None if data_type == "train" else self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
+            generated = None if data_type == "train" else self.model.generate(input_ids, attention_mask=input_mask,
+                                                                              max_length=labels.size(1) + 1)
             # dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
             generated = generated[:, 1:]
             if generated.size(1) < labels.size(1):
@@ -138,7 +139,9 @@ class Trainer(BaseTrainer):
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code))
         self._report(stats, mode=data_type)
-        return round(stats.xent(), 5)
+        # return round(stats.xent(), 5)
+        return round(100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP), 4) if data_type != "train" else round(
+            stats.xent(), 5)
 
     def _stats(self, stats: Statistics, loss, preds, target):
         non_padding = target.ne(-100)
@@ -159,8 +162,8 @@ class Trainer(BaseTrainer):
         correct_utter_number = 0
         TP, FP, FN = 0, 0, 0
         for pred_utterance, anno_utterance in zip(preds_dec, labels_dec):
-            x = pred_utterance
-            if ":" in x and pred_utterance.index(":") + 2 < len(pred_utterance):
+            x = ""
+            if ":" in pred_utterance and pred_utterance.index(":") + 2 < len(pred_utterance):
                 x = pred_utterance[pred_utterance.index(":") + 2:]
             y = anno_utterance[anno_utterance.index(":") + 2:]
             anno_semantics = [one.split("-") for one in x.split(";")]
