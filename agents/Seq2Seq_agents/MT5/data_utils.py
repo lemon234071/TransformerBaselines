@@ -25,7 +25,7 @@ def build_dataset(dataset, tokenizer):
         input_idx = tokenizer.convert_tokens_to_ids(
             tokenizer.tokenize("query: " + line[0]))
         label_idx = tokenizer.convert_tokens_to_ids(
-            tokenizer.tokenize("semantic: " + line[1]))
+            tokenizer.tokenize(line[1]))
         input_seq = input_idx
         label_seq = label_idx + [tokenizer.eos_token_id]
 

@@ -93,12 +93,12 @@ def main():
         if opt.result_path:
             save_json(result, opt.result_path)
     else:
-        best_loss = 10000
+        best_loss = -10000
         patience = 0
         for e in range(opt.epochs):
             trainer.train(e)
             val_loss = trainer.evaluate(e, "valid")
-            if best_loss > val_loss:
+            if best_loss < val_loss:
                 best_loss = val_loss
                 trainer.save(best_checkpoint)
                 logger.info('Best val loss {} at epoch {}'.format(best_loss, e))
@@ -106,6 +106,9 @@ def main():
                 patience = 0
             else:
                 patience += 1
+                if patience > 2:
+                    trainer.optim_schedule.set_lr(trainer.optim_schedule.get_lr() * 0.5)
+                    print(trainer.optim_schedule.get_lr(), patience, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
                 if patience > opt.early_stop:
                     break
 

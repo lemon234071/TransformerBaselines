@@ -108,7 +108,7 @@ class Trainer(BaseTrainer):
             loss, logits = outputs.loss, outputs.logits
 
             generated = None
-            if data_type != "train":
+            if data_type != "train" and epoch > 25:
                 generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
                 generated = generated[:, 1:]
                 if generated.size(1) < labels.size(1):
@@ -138,9 +138,10 @@ class Trainer(BaseTrainer):
             #     sys.stdout.flush()
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code))
-        self._report(stats, mode=data_type)
+        self._report(stats, data_type, epoch)
         # return round(stats.xent(), 5)
-        return round(100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP), 4) if data_type != "train" else round(
+        return round(100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP),
+                     4) if data_type != "train" and epoch > 25 else -round(
             stats.xent(), 5)
 
     def _stats(self, stats: Statistics, loss, preds, target):
@@ -162,12 +163,8 @@ class Trainer(BaseTrainer):
         correct_utter_number = 0
         TP, FP, FN = 0, 0, 0
         for pred_utterance, anno_utterance in zip(preds_dec, labels_dec):
-            x = ""
-            if ":" in pred_utterance and pred_utterance.index(":") + 2 < len(pred_utterance):
-                x = pred_utterance[pred_utterance.index(":") + 2:]
-            y = anno_utterance[anno_utterance.index(":") + 2:]
-            anno_semantics = [one.split("-") for one in x.split(";")]
-            pred_semantics = [one.split("-") for one in y.split(";")]
+            anno_semantics = [one.split("-") for one in anno_utterance.split(";")]
+            pred_semantics = [one.split("-") for one in pred_utterance.split(";")]
             anno_semantics = set([tuple(item) for item in anno_semantics])
             pred_semantics = set([tuple(item) for item in pred_semantics])
 
@@ -196,16 +193,17 @@ class Trainer(BaseTrainer):
         }
         stats.update(loss * num_non_padding, num_non_padding, metrics)
 
-    def _report(self, stats: Statistics, mode):
-        if mode == "train":
+    def _report(self, stats: Statistics, mode, epoch):
+        if mode == "train" and epoch <= 25:
             logger.info("avg_loss: {} ".format(round(stats.xent(), 5)))
         else:
             logger.info(
                 "avg_loss: {} ".format(round(stats.xent(), 5)) +
                 "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
                 "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2)) +
-                "Precision %.2f" % (100 * stats.TP / (stats.TP + stats.FP)) +
-                "Recall %.2f" % (100 * stats.TP / (stats.TP + stats.FN)) +
-                "F1-score %.2f" % (100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP)) +
-                "Joint accuracy %.2f" % (100 * stats.correct_utter_number / stats.total_utter_number)
+                "Precision %.2f " % (100 * stats.TP / (stats.TP + stats.FP)) +
+                "Recall %.2f " % (100 * stats.TP / (stats.TP + stats.FN)) +
+                "F1-score %.2f " % (100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP)) +
+                "Joint accuracy %.2f " % (100 * stats.correct_utter_number / stats.total_utter_number) +
+                "lr: {}".format(self.optim_schedule.get_lr())
             )
