@@ -62,6 +62,7 @@ class Trainer(BaseTrainer):
         self.optim_schedule = ScheduledOptim(opt, _optimizer)
 
         self.skip_report_eval_steps = opt.skip_report_eval_steps
+        self.show_case = False
 
     def load_data(self, datasets, infer=False):
         for k, v in datasets.items():
@@ -124,7 +125,7 @@ class Trainer(BaseTrainer):
             loss, logits = outputs.loss, outputs.logits
 
             generated = None
-            if True:  # data_type != "train" and epoch > self.skip_report_eval_steps:
+            if data_type != "train" and epoch > self.skip_report_eval_steps:
                 generated = self.model.generate(input_ids, attention_mask=input_mask,
                                                 max_length=labels.size(1))  # labels.size(1) + 1
                 # generated = generated[:, 1:]
@@ -210,7 +211,7 @@ class Trainer(BaseTrainer):
         stats.update(loss * num_non_padding, num_non_padding, metrics)
 
     def _report(self, stats: Statistics, mode, epoch):
-        if mode == "train" and epoch < self.skip_report_eval_steps:
+        if mode == "train" and epoch <= self.skip_report_eval_steps:
             logger.info("avg_loss: {} ".format(round(stats.xent(), 5)))
         else:
             logger.info(
