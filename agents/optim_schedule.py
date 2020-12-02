@@ -3,18 +3,19 @@
 import functools
 from math import sqrt
 from torch import optim
+from transformers import AdamW
 
 
 def _get_optimizer(model, opt):
     param_optimizer = list(model.named_parameters())
-    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+    no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in param_optimizer if
                     not any(nd in n for nd in no_decay)], 'weight_decay': opt.weight_decay},
         {'params': [p for n, p in param_optimizer if
                     any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
 
-    return optim.Adam(optimizer_grouped_parameters, lr=opt.learning_rate)
+    return AdamW(optimizer_grouped_parameters, lr=opt.learning_rate, eps=opt.adam_epsilon)
 
 
 class ScheduledOptim():
@@ -32,6 +33,7 @@ class ScheduledOptim():
         agent.add_argument("--warmup_steps", default=10000, type=int)
         agent.add_argument("--weight_decay", default=0.01, type=float)
         agent.add_argument("--decay_method", default=None, type=str)
+        agent.add_argument("--adam_epsilon", default=1e-8, type=float)
         agent.add_argument("--start_decay_steps", default=None, type=str)
 
     def __init__(self, optim_opt, optimizer):

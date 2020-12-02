@@ -56,15 +56,25 @@ class BaseTrainer(object):
         raise NotImplementedError
 
     def save(self, file_path):
-        torch.save(self.model.cpu(), file_path)
-        self.model.to(self.device)
-        logger.info('Model save {}'.format(file_path))
+        # Save model checkpoint (Overwrite)
+        if not os.path.exists(file_path):
+            os.makedirs(file_path)
+        model_to_save = self.model.module if hasattr(self.model, 'module') else self.model
+        model_to_save.save_pretrained(file_path)
+
+        # Save training arguments together with the trained model
+        torch.save(self.opt, os.path.join(file_path, 'training_args.bin'))
+        logger.info("Saving model checkpoint to %s", file_path)
 
     def load(self, file_path):
         if not os.path.exists(file_path):
             raise Exception("%s does not exists" % file_path)
-        self.model = torch.load(file_path)
-        self.model.to(self.device)
+        try:
+            self.model = self.model.from_pretrained(file_path)
+            self.model.to(self.device)
+            logger.info("***** Model Loaded from {} *****".format(file_path))
+        except:
+            raise Exception("Some model files might be missing...")
 
     def iteration(self, epoch, data_loader, data_type="train"):
         raise NotImplementedError

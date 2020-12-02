@@ -84,30 +84,35 @@ def main():
                       opt.dataset_path.replace("/", "&&&").replace("\\", "&&&") + '_best_model.pt'
 
     if opt.mode == "infer":
-        if not os.path.exists(opt.checkpoint):
+        if os.path.exists(best_checkpoint):
             opt.checkpoint = best_checkpoint
         trainer.load(opt.checkpoint)
         result = trainer.infer("test")
         if opt.result_path:
             save_json(result, opt.result_path)
     else:
-        best_loss = -10000
+        best_metric = -10000
         patience = 0
         for e in range(opt.epochs):
             trainer.train(e)
             trainer.show_case = True
-            val_loss = trainer.evaluate(e, "valid")
-            if best_loss < val_loss:
-                best_loss = val_loss
+            val_metric = trainer.evaluate(e, "valid")
+            last_metric = val_metric
+            if best_metric < val_metric:
+                best_metric = val_metric
                 trainer.save(best_checkpoint)
-                logger.info('Best val loss {} at epoch {}'.format(best_loss, e))
-                test_loss = trainer.evaluate(e, "test")
+                test_metric = trainer.evaluate(e, "test")
+                logger.info('Best val metric {} at epoch {}'.format(abs(best_metric), e) +
+                            'Best test metric {}'.format(test_metric))
                 patience = 0
+            elif last_metric < val_metric:
+                logger.info('Better than last')
             else:
                 patience += 1
-                if patience >= opt.early_stop // 2:
+                if patience >= 3:
                     trainer.optim_schedule.set_lr(trainer.optim_schedule.get_lr() * 0.5)
-                    print(trainer.optim_schedule.get_lr(), patience, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                    logger.info("lr: {} ".format(trainer.optim_schedule.get_lr()) +
+                                "patience: {} ".format(patience))
                 if patience > opt.early_stop:
                     break
 

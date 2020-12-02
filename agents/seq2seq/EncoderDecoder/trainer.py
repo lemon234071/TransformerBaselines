@@ -3,6 +3,7 @@ import tqdm
 import logging
 import platform
 
+import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import BertConfig, EncoderDecoderConfig, EncoderDecoderModel, BertTokenizer
@@ -131,13 +132,13 @@ class Trainer(BaseTrainer):
                 # generated = generated[:, 1:]
                 if generated.size(1) < labels.size(1):
                     generated = pad_sequence([labels[0]] + [one for one in generated], batch_first=True,
-                                             padding_value=self.tokenizer.pad_token_id)  # [1:]
+                                             padding_value=self.tokenizer.pad_token_id)[1:]
 
             if data_type == "train":
                 loss = loss / self.opt.gradient_accumulation_steps
                 loss.backward(retain_graph=True)
                 if step % self.opt.gradient_accumulation_steps == 0:
-                    # torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
                     self.optim_schedule.step()
                     self.optim_schedule.zero_grad()
 
@@ -172,9 +173,10 @@ class Trainer(BaseTrainer):
         labels_dec = self.tokenizer.batch_decode(target_forgen, skip_special_tokens=True,
                                                  clean_up_tokenization_spaces=False)
         if self.show_case:
-            logger.info("pred: ".format(preds_dec[0]))
-            logger.info("label: ".format(labels_dec[0]))
-            logger.info("--------------------------------------")
+            for i in range(5):
+                logger.info("pred: {} ".format(preds_dec[i]))
+                logger.info("label: {} ".format(labels_dec[i]))
+                logger.info("--------------------------------------")
             self.show_case = False
 
         # preds_dec = ["-".join([str(token) for token in seq if token != 0]) for seq in preds.tolist()]
@@ -211,7 +213,7 @@ class Trainer(BaseTrainer):
         stats.update(loss * num_non_padding, num_non_padding, metrics)
 
     def _report(self, stats: Statistics, mode, epoch):
-        if mode == "train" and epoch <= self.skip_report_eval_steps:
+        if mode == "train" or epoch <= self.skip_report_eval_steps:
             logger.info("avg_loss: {} ".format(round(stats.xent(), 5)))
         else:
             logger.info(
