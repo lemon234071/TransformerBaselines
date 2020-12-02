@@ -23,9 +23,9 @@ def build_dataset(dataset, tokenizer):
         # label_idx = tokenizer.convert_tokens_to_ids(
         #     tokenizer.tokenize(" ; ".join(line["semantics"])))
         input_idx = tokenizer.convert_tokens_to_ids(
-            tokenizer.tokenize("query: " + line[0]))
+            tokenizer.tokenize(line[0]))
         label_idx = tokenizer.convert_tokens_to_ids(
-            tokenizer.tokenize("semantic: " + line[1]))
+            tokenizer.tokenize(line[1]))
         input_seq = [tokenizer.cls_token_id] + input_idx + [tokenizer.sep_token_id]
         label_seq = [tokenizer.cls_token_id] + label_idx + [tokenizer.sep_token_id]
 

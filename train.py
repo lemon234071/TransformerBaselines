@@ -1,11 +1,11 @@
 #!usr/bin/env python
 # -*- coding:utf-8 -*-
 import os
-import sys
 import random
 import logging
 import argparse
 import importlib
+import platform
 from pprint import pformat
 
 import numpy as np
@@ -19,9 +19,7 @@ from utils import *
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')  # - %(name)s
 logger = logging.getLogger(__file__)
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# device = torch.device('cpu')
+device = torch.device('cuda' if torch.cuda.is_available() and platform.system() != 'Windows' else 'cpu')
 logger.info("Device: {}".format(device))
 
 
@@ -97,6 +95,7 @@ def main():
         patience = 0
         for e in range(opt.epochs):
             trainer.train(e)
+            trainer.show_case = True
             val_loss = trainer.evaluate(e, "valid")
             if best_loss < val_loss:
                 best_loss = val_loss
@@ -106,20 +105,11 @@ def main():
                 patience = 0
             else:
                 patience += 1
-                if patience > 2:
+                if patience >= opt.early_stop // 2:
                     trainer.optim_schedule.set_lr(trainer.optim_schedule.get_lr() * 0.5)
                     print(trainer.optim_schedule.get_lr(), patience, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
                 if patience > opt.early_stop:
                     break
-
-            # trainer.load(best_checkpoint)
-
-            # for i in trainer.inference(val):
-            #     print(i)
-            #     print('\n')
-            # if do_test:
-            #     final_test_ppl = manager.evaluate('test')
-            #     print('Test PPL: {:.4f}'.format(final_test_ppl))
 
 
 if __name__ == '__main__':

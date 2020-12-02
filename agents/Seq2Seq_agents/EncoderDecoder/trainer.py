@@ -58,13 +58,13 @@ class Trainer(BaseTrainer):
         #     print("Using %d GPUS for train" % torch.cuda.device_count())
         #     self.model = nn.DataParallel(self.model, device_ids=[0,1,2])
 
-        # _optimizer = optim.Adam(self.model.parameters(), lr=opt.lr, weight_decay=opt.weight_decay)
         _optimizer = _get_optimizer(self.model, opt)
         self.optim_schedule = ScheduledOptim(opt, _optimizer)
 
+        self.skip_report_eval_steps = opt.skip_report_eval_steps
+
     def load_data(self, datasets, infer=False):
         for k, v in datasets.items():
-            # self._dataset[type] = BertDataset(self.tokenizer, data, max_len=self.opt.max_len)
             self._dataset[k] = build_dataset(v, self.tokenizer)
             tensor_dataset = collate(self._dataset[k], self.tokenizer.pad_token_id)
             dataset = TensorDataset(*tensor_dataset)
@@ -89,9 +89,7 @@ class Trainer(BaseTrainer):
             generated = self.model.generate(input_ids, attention_mask=input_mask)
             dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
             out_put.extend(dec)
-            # self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)
 
-        # self._report(stats)
         return out_put
 
     def iteration(self, epoch, data_loader, data_type="train"):
@@ -126,7 +124,7 @@ class Trainer(BaseTrainer):
             loss, logits = outputs.loss, outputs.logits
 
             generated = None
-            if data_type != "train":
+            if True:  # data_type != "train" and epoch > self.skip_report_eval_steps:
                 generated = self.model.generate(input_ids, attention_mask=input_mask,
                                                 max_length=labels.size(1))  # labels.size(1) + 1
                 # generated = generated[:, 1:]
@@ -142,8 +140,6 @@ class Trainer(BaseTrainer):
                     self.optim_schedule.step()
                     self.optim_schedule.zero_grad()
 
-            # sta
-            # self._stats(stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
             self._stats(stats, loss.item(), generated, labels)
             # if data_type == "train" and self.opt.report_every > 0 and step % self.opt.report_every == 0:
             #     post_fix = {
@@ -157,8 +153,10 @@ class Trainer(BaseTrainer):
             #     sys.stdout.flush()
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code))
-        self._report(stats, mode=data_type)
-        return round(stats.xent(), 5)
+        self._report(stats, data_type, epoch)
+        return round(100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP),
+                     4) if data_type != "train" and epoch > self.skip_report_eval_steps else -round(
+            stats.xent(), 5)
 
     def _stats(self, stats: Statistics, loss, preds, target):
         non_padding = target.ne(-100)
@@ -172,6 +170,12 @@ class Trainer(BaseTrainer):
         target_forgen[target == -100] = 0
         labels_dec = self.tokenizer.batch_decode(target_forgen, skip_special_tokens=True,
                                                  clean_up_tokenization_spaces=False)
+        if self.show_case:
+            logger.info("pred: ".format(preds_dec[0]))
+            logger.info("label: ".format(labels_dec[0]))
+            logger.info("--------------------------------------")
+            self.show_case = False
+
         # preds_dec = ["-".join([str(token) for token in seq if token != 0]) for seq in preds.tolist()]
         # labels_dec = ["-".join([str(token) for token in seq if token != -100]) for seq in target.tolist()]
         assert len(preds_dec) == len(labels_dec)
@@ -179,12 +183,8 @@ class Trainer(BaseTrainer):
         correct_utter_number = 0
         TP, FP, FN = 0, 0, 0
         for pred_utterance, anno_utterance in zip(preds_dec, labels_dec):
-            x = ""
-            if ":" in pred_utterance and pred_utterance.index(":") + 2 < len(pred_utterance):
-                x = pred_utterance[pred_utterance.index(":") + 2:]
-            y = anno_utterance[anno_utterance.index(":") + 2:]
-            anno_semantics = [one.split("-") for one in x.split(";")]
-            pred_semantics = [one.split("-") for one in y.split(";")]
+            anno_semantics = [one.split("-") for one in anno_utterance.replace(" ", "").split(";")]
+            pred_semantics = [one.split("-") for one in pred_utterance.replace(" ", "").split(";")]
             anno_semantics = set([tuple(item) for item in anno_semantics])
             pred_semantics = set([tuple(item) for item in pred_semantics])
 
@@ -209,8 +209,8 @@ class Trainer(BaseTrainer):
         }
         stats.update(loss * num_non_padding, num_non_padding, metrics)
 
-    def _report(self, stats: Statistics, mode):
-        if mode == "train":
+    def _report(self, stats: Statistics, mode, epoch):
+        if mode == "train" and epoch < self.skip_report_eval_steps:
             logger.info("avg_loss: {} ".format(round(stats.xent(), 5)))
         else:
             logger.info(
@@ -220,5 +220,6 @@ class Trainer(BaseTrainer):
                 "Precision %.2f " % (100 * stats.TP / (stats.TP + stats.FP)) +
                 "Recall %.2f " % (100 * stats.TP / (stats.TP + stats.FN)) +
                 "F1-score %.2f " % (100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP)) +
-                "Joint accuracy %.2f " % (100 * stats.correct_utter_number / stats.total_utter_number)
+                "Joint accuracy %.2f " % (100 * stats.correct_utter_number / stats.total_utter_number) +
+                "lr: {}".format(self.optim_schedule.get_lr())
             )
