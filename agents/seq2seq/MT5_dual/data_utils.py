@@ -32,7 +32,7 @@ def build_dataset(dataset, tokenizer):
         reverse_input_idx = reverse_input_idx
         reverse_label_idx = reverse_label_idx + [tokenizer.eos_token_id]
 
-        reverse_input_mask = [1 for _ in range(len(reverse_label_idx))]
+        reverse_input_mask = [1 for _ in range(len(reverse_input_idx))]
 
         instances["pad_reverse_input"].append(reverse_input_idx)
         instances["pad_reverse_input_mask"].append(reverse_input_mask)
