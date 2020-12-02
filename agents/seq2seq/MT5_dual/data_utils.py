@@ -12,12 +12,10 @@ def build_dataset(dataset, tokenizer):
     logger.info("Tokenize and encode the dataset")
     instances = collections.defaultdict(list)
     for line in dataset:
-        input_idx = tokenizer.convert_tokens_to_ids(
-            tokenizer.tokenize("query: " + line[0]))
-        label_idx = tokenizer.convert_tokens_to_ids(
-            tokenizer.tokenize(line[1]))
-        input_idx = input_idx
-        label_idx = label_idx + [tokenizer.eos_token_id]
+        x = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(line[0]))
+        y = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(line[1]))
+        input_idx = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("query: ")) + x
+        label_idx = y + [tokenizer.eos_token_id]
 
         input_mask = [1 for _ in range(len(input_idx))]
 
@@ -25,12 +23,8 @@ def build_dataset(dataset, tokenizer):
         instances["pad_input_mask"].append(input_mask)
         instances["pad_label"].append(label_idx)
 
-        reverse_input_idx = tokenizer.convert_tokens_to_ids(
-            tokenizer.tokenize("semantic: " + line[1]))
-        reverse_label_idx = tokenizer.convert_tokens_to_ids(
-            tokenizer.tokenize(line[0]))
-        reverse_input_idx = reverse_input_idx
-        reverse_label_idx = reverse_label_idx + [tokenizer.eos_token_id]
+        reverse_input_idx = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("semantic: ")) + y
+        reverse_label_idx = x + [tokenizer.eos_token_id]
 
         reverse_input_mask = [1 for _ in range(len(reverse_input_idx))]
 
