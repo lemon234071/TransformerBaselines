@@ -92,6 +92,7 @@ def main():
             save_json(result, opt.result_path)
     else:
         best_metric = -10000
+        test_metric = -10000
         patience = 0
         for e in range(opt.epochs):
             trainer.train(e)
@@ -102,8 +103,7 @@ def main():
                 best_metric = val_metric
                 trainer.save(best_checkpoint)
                 test_metric = trainer.evaluate(e, "test")
-                logger.info('Best val metric {} at epoch {}'.format(abs(best_metric), e) +
-                            'Best test metric {}'.format(test_metric))
+                logger.info('Best val metric {} at epoch {}'.format(abs(best_metric), e))
                 patience = 0
             elif last_metric < val_metric:
                 logger.info('Better than last')
@@ -115,6 +115,7 @@ def main():
                                 "patience: {} ".format(patience))
                 if patience > opt.early_stop:
                     break
+            logger.info('Best test metric {}'.format(test_metric))
 
 
 if __name__ == '__main__':

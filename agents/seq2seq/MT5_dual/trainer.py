@@ -3,6 +3,7 @@ import tqdm
 import logging
 import platform
 
+import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import T5Tokenizer, MT5Config, MT5ForConditionalGeneration
@@ -45,6 +46,8 @@ class Trainer(BaseTrainer):
         # _optimizer = optim.Adam(self.model.parameters(), lr=opt.lr, weight_decay=opt.weight_decay)
         _optimizer = _get_optimizer(self.model, opt)
         self.optim_schedule = ScheduledOptim(opt, _optimizer)
+
+        self.skip_report_eval_steps = opt.skip_report_eval_steps
 
     def load_data(self, datasets, infer=False):
         for k, v in datasets.items():
@@ -100,15 +103,20 @@ class Trainer(BaseTrainer):
         for step, batch in data_loader:
             # 0. batch_data will be sent into the device(GPU or cpu)
             # data = {key: value.to(self.device) for key, value in data.items()}
-            input_ids, input_mask, labels = tuple(
+            input_ids, input_mask, labels, r_input_ids, r_input_mask, r_labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
             outputs = self.model(input_ids, attention_mask=input_mask, labels=labels,
                                  return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
+            reverse_outputs = self.model(r_input_ids, attention_mask=r_input_mask, labels=r_labels,
+                                 return_dict=True)  # prob [batch_size, seq_len, 1]
+            reverse_loss = reverse_outputs.loss
+            loss += reverse_loss
+
             generated = None
-            if data_type != "train" and epoch > 25:
+            if data_type != "train" and epoch > self.skip_report_eval_steps:
                 generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
                 generated = generated[:, 1:]
                 if generated.size(1) < labels.size(1):
@@ -119,7 +127,7 @@ class Trainer(BaseTrainer):
                 loss = loss / self.opt.gradient_accumulation_steps
                 loss.backward(retain_graph=True)
                 if step % self.opt.gradient_accumulation_steps == 0:
-                    # torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
                     self.optim_schedule.step()
                     self.optim_schedule.zero_grad()
 
@@ -141,7 +149,7 @@ class Trainer(BaseTrainer):
         self._report(stats, data_type, epoch)
         # return round(stats.xent(), 5)
         return round(100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP),
-                     4) if data_type != "train" and epoch > 25 else -round(
+                     4) if data_type != "train" and epoch > self.skip_report_eval_steps else -round(
             stats.xent(), 5)
 
     def _stats(self, stats: Statistics, loss, preds, target):
@@ -156,8 +164,12 @@ class Trainer(BaseTrainer):
         target_forgen[target == -100] = 0
         labels_dec = self.tokenizer.batch_decode(target_forgen, skip_special_tokens=True,
                                                  clean_up_tokenization_spaces=False)
-        # preds_dec = ["-".join([str(token) for token in seq if token != 0]) for seq in preds.tolist()]
-        # labels_dec = ["-".join([str(token) for token in seq if token != -100]) for seq in target.tolist()]
+        if self.show_case:
+            for i in range(5):
+                logger.info("pred: {} ".format(preds_dec[i]))
+                logger.info("label: {} ".format(labels_dec[i]))
+                logger.info("--------------------------------------")
+            self.show_case = False
         assert len(preds_dec) == len(labels_dec)
         total_utter_number = 0
         correct_utter_number = 0
@@ -194,7 +206,7 @@ class Trainer(BaseTrainer):
         stats.update(loss * num_non_padding, num_non_padding, metrics)
 
     def _report(self, stats: Statistics, mode, epoch):
-        if mode == "train" and epoch <= 25:
+        if mode == "train" or epoch <= self.skip_report_eval_steps:
             logger.info("avg_loss: {} ".format(round(stats.xent(), 5)))
         else:
             logger.info(

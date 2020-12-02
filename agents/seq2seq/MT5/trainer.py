@@ -201,7 +201,7 @@ class Trainer(BaseTrainer):
         stats.update(loss * num_non_padding, num_non_padding, metrics)
 
     def _report(self, stats: Statistics, mode, epoch):
-        if mode == "train" and epoch <= self.skip_report_eval_steps:
+        if mode == "train" or epoch <= self.skip_report_eval_steps:
             logger.info("avg_loss: {} ".format(round(stats.xent(), 5)))
         else:
             logger.info(
