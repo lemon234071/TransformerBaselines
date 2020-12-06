@@ -71,7 +71,7 @@ class Trainer(BaseTrainer):
                                 bar_format="{l_bar}{r_bar}")
         # stats = Statistics()
         for step, batch in data_loader:
-            input_ids, input_mask, labels = tuple(
+            input_ids, input_mask, labels, r_input_ids, r_input_mask, r_labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
             generated = self.model.generate(input_ids, attention_mask=input_mask)
             dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
