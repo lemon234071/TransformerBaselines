@@ -39,7 +39,7 @@ parser.add_argument("--agent", type=str, required=True,
                     help="Agent name")
 
 # data
-parser.add_argument("--dataset_path", type=str, default="data/catslu/map/",
+parser.add_argument("--dataset_path", type=str, default="data/catslu/hyps/map/",
                     help="Path or url of the dataset. If empty download accroding to dataset.")
 parser.add_argument("--save_dir", type=str, default="checkpoint/")
 parser.add_argument('--save_name', type=str, default="")
@@ -86,6 +86,7 @@ def main():
     if opt.mode == "infer":
         if os.path.exists(best_checkpoint):
             opt.checkpoint = best_checkpoint
+        logger.info("load checkpoint from {} ".format(opt.checkpoint))
         trainer.load(opt.checkpoint)
         result = trainer.infer("test")
         if opt.result_path:

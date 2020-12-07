@@ -52,7 +52,7 @@ class Trainer(BaseTrainer):
     def load_data(self, datasets, infer=False):
         for k, v in datasets.items():
             # self._dataset[type] = BertDataset(self.tokenizer, data, max_len=self.opt.max_len)
-            self._dataset[k] = build_dataset(v, self.tokenizer)
+            self._dataset[k] = build_dataset(k, v, self.tokenizer)
             tensor_dataset = collate(self._dataset[k], self.tokenizer.pad_token_id)
             dataset = TensorDataset(*tensor_dataset)
             shuffle = (k == "train") and not infer
@@ -106,8 +106,7 @@ class Trainer(BaseTrainer):
             input_ids, input_mask, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
-            outputs = self.model(input_ids, attention_mask=input_mask, labels=labels,
-                                 return_dict=True)  # prob [batch_size, seq_len, 1]
+            outputs = self.model(input_ids, attention_mask=input_mask, labels=labels, return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
             if data_type == "train":

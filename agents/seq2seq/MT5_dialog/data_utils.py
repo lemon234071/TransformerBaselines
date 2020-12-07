@@ -8,8 +8,8 @@ from torch.nn.utils.rnn import pad_sequence
 logger = logging.getLogger(__file__)
 
 
-def build_dataset(dataset, tokenizer):
-    logger.info("Tokenize and encode the dataset")
+def build_dataset(name, dataset, tokenizer):
+    logger.info("Tokenize and encode the dataset {} ".format(name))
     instances = collections.defaultdict(list)
     for line in dataset:
         # input_idx = tokenizer.convert_tokens_to_ids(
