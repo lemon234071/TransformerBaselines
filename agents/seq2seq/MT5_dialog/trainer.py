@@ -110,14 +110,6 @@ class Trainer(BaseTrainer):
                                  return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
-            generated = None
-            if data_type != "train" and epoch > self.skip_report_eval_steps:
-                generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
-                generated = generated[:, 1:]
-                if generated.size(1) < labels.size(1):
-                    generated = pad_sequence([labels[0]] + [one for one in generated], batch_first=True,
-                                             padding_value=self.tokenizer.pad_token_id)[1:]
-
             if data_type == "train":
                 loss = loss / self.opt.gradient_accumulation_steps
                 loss.backward()
@@ -127,76 +119,25 @@ class Trainer(BaseTrainer):
                     self.optim_schedule.zero_grad()
 
             # sta
-            # self._stats(stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
-            self._stats(stats, loss.item(), generated, labels)
+            self._stats(stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code))
         self._report(stats, data_type, epoch)
-        # return round(stats.xent(), 5)
-        return round(100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP),
-                     4) if data_type != "train" and epoch > self.skip_report_eval_steps else -round(
-            stats.xent(), 5)
+
+        return -round(stats.xent(), 6)
 
     def _stats(self, stats: Statistics, loss, preds, target):
         non_padding = target.ne(-100)
         num_non_padding = non_padding.sum().item()
-        if preds is None:
-            stats.update(loss * num_non_padding, num_non_padding, {})
-            return
-
-        preds_dec = self.tokenizer.batch_decode(preds, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-        target_forgen = target.clone()
-        target_forgen[target == -100] = 0
-        labels_dec = self.tokenizer.batch_decode(target_forgen, skip_special_tokens=True,
-                                                 clean_up_tokenization_spaces=False)
-        if self.show_case:
-            for i in range(5):
-                logger.info("pred: {} ".format(preds_dec[i]))
-                logger.info("label: {} ".format(labels_dec[i]))
-                logger.info("--------------------------------------")
-            self.show_case = False
-        assert len(preds_dec) == len(labels_dec)
-        total_utter_number = 0
-        correct_utter_number = 0
-        TP, FP, FN = 0, 0, 0
-        for pred_utterance, anno_utterance in zip(preds_dec, labels_dec):
-            anno_semantics = [one.split("-") for one in anno_utterance.split(";")]
-            pred_semantics = [one.split("-") for one in pred_utterance.split(";")]
-            anno_semantics = set([tuple(item) for item in anno_semantics])
-            pred_semantics = set([tuple(item) for item in pred_semantics])
-
-            total_utter_number += 1
-            if anno_semantics == pred_semantics:
-                correct_utter_number += 1
-
-            TP += len(anno_semantics & pred_semantics)
-            FN += len(anno_semantics - pred_semantics)
-            FP += len(pred_semantics - anno_semantics)
 
         metrics = {
-            "n_correct": preds.eq(target).masked_select(non_padding).sum().item(),
-            "n_correct_utt": sum(x.eq(y).masked_select(z).all().float().item()
-                                 for x, y, z in zip(preds, target, non_padding)),
-            "n_utterances": target.size(0),
-            "TP": TP,
-            "FN": FN,
-            "FP": FP,
-            "correct_utter_number": correct_utter_number,
-            "total_utter_number": total_utter_number
+            "n_correct": preds.eq(target).masked_select(non_padding).sum().item()
         }
         stats.update(loss * num_non_padding, num_non_padding, metrics)
 
     def _report(self, stats: Statistics, mode, epoch):
-        if mode == "train" or epoch <= self.skip_report_eval_steps:
-            logger.info("avg_loss: {} ".format(round(stats.xent(), 5)))
-        else:
-            logger.info(
-                "avg_loss: {} ".format(round(stats.xent(), 5)) +
-                "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
-                "utterances acc: {} ".format(round(100 * (stats.n_correct_utt / stats.n_utterances), 2)) +
-                "Precision %.2f " % (100 * stats.TP / (stats.TP + stats.FP)) +
-                "Recall %.2f " % (100 * stats.TP / (stats.TP + stats.FN)) +
-                "F1-score %.2f " % (100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP)) +
-                "Joint accuracy %.2f " % (100 * stats.correct_utter_number / stats.total_utter_number) +
-                "lr: {}".format(self.optim_schedule.get_lr())
-            )
+        logger.info(
+            "avg_loss: {} ".format(round(stats.xent(), 5)) +
+            "words acc: {} ".format(round(100 * (stats.n_correct / stats.n_words), 2)) +
+            "lr: {}".format(self.optim_schedule.get_lr())
+        )

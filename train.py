@@ -81,7 +81,7 @@ def main():
     if not os.path.exists("checkpoint"):
         os.mkdir("checkpoint")
     best_checkpoint = opt.save_dir + opt.save_name + "-" + parsed.get('agent') + "_" + \
-                      opt.dataset_path.replace("/", "-").replace("\\", "-") + '_best_model.pt'
+                      opt.dataset_path.replace("/", "-").replace("\\", "-") + '_best_model'
 
     if opt.mode == "infer":
         if os.path.exists(best_checkpoint):

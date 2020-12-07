@@ -111,7 +111,14 @@ class Trainer(BaseTrainer):
             loss, logits = outputs.loss, outputs.logits
 
             reverse_outputs = self.model(r_input_ids, attention_mask=r_input_mask, labels=r_labels,
-                                 return_dict=True)  # prob [batch_size, seq_len, 1]
+                                         return_dict=True)  # prob [batch_size, seq_len, 1]
+            if self.da:
+                r_generated = self.model.generate(r_input_ids, attention_mask=r_input_mask,
+                                                  max_length=r_labels.size(1) + 5)
+                r_generated = r_generated[:, 1:]
+                bos_idx = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize("semantic: "))
+
+
             reverse_loss = reverse_outputs.loss
             loss += reverse_loss
 
@@ -125,7 +132,7 @@ class Trainer(BaseTrainer):
 
             if data_type == "train":
                 loss = loss / self.opt.gradient_accumulation_steps
-                loss.backward(retain_graph=True)
+                loss.backward()
                 if step % self.opt.gradient_accumulation_steps == 0:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
                     self.optim_schedule.step()
