@@ -55,6 +55,7 @@ def collate(dataset, pad_id, batch_first=True):
             input_tensor = torch.tensor(dataset[input_name], dtype=torch.long)
         tensor_dataset.append(input_tensor)
     logging.info("Max len of input tensor is %d" % tensor_dataset[0].shape[1])
+    logging.info("Max len of label tensor is %d" % tensor_dataset[-1].shape[1])
     return tensor_dataset
 
 

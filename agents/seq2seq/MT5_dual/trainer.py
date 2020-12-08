@@ -26,6 +26,8 @@ class Trainer(BaseTrainer):
         # memory and knowledge arguments
 
         agent.add_argument('--checkpoint', type=str, default="google/mt5-small")
+        agent.add_argument('--da', type=bool, default=False)
+        agent.add_argument('--beam', type=int, default=1)
 
     def __init__(self, opt, device):
         super(Trainer, self).__init__(opt, device)
@@ -48,12 +50,14 @@ class Trainer(BaseTrainer):
         self.optim_schedule = ScheduledOptim(opt, _optimizer)
 
         self.skip_report_eval_steps = opt.skip_report_eval_steps
+        self.da = opt.da
+        self.beam = opt.beam
 
     def load_data(self, datasets, infer=False):
         for k, v in datasets.items():
             # self._dataset[type] = BertDataset(self.tokenizer, data, max_len=self.opt.max_len)
-            self._dataset[k] = build_dataset(v, self.tokenizer)
-            tensor_dataset = collate(self._dataset[k], self.tokenizer.pad_token_id)
+            self._dataset[k] = build_dataset(v, self.tokenizer, k)
+            tensor_dataset = collate(self._dataset[k], self.tokenizer.pad_token_id, k)
             dataset = TensorDataset(*tensor_dataset)
             shuffle = (k == "train") and not infer
             self._dataloader[k] = DataLoader(dataset,
@@ -106,29 +110,23 @@ class Trainer(BaseTrainer):
             input_ids, input_mask, labels, r_input_ids, r_input_mask, r_labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
+            # forward
             outputs = self.model(input_ids, attention_mask=input_mask, labels=labels,
                                  return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
+            # reverse forward
             reverse_outputs = self.model(r_input_ids, attention_mask=r_input_mask, labels=r_labels,
                                          return_dict=True)  # prob [batch_size, seq_len, 1]
-            # if self.da:
-            #     r_generated = self.model.generate(r_input_ids, attention_mask=r_input_mask,
-            #                                       max_length=r_labels.size(1) + 5)
-            #     r_generated = r_generated[:, 1:]
-            #     bos_idx = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize("semantic: "))
-
-
             reverse_loss = reverse_outputs.loss
             loss += reverse_loss
 
-            generated = None
-            if data_type != "train" and epoch > self.skip_report_eval_steps:
-                generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
-                generated = generated[:, 1:]
-                if generated.size(1) < labels.size(1):
-                    generated = pad_sequence([labels[0]] + [one for one in generated], batch_first=True,
-                                             padding_value=self.tokenizer.pad_token_id)[1:]
+            # data augment
+            if data_type == "train" and self.da:
+                da_input_ids, da_input_mask, da_labels = self.get_da(r_input_ids, r_input_mask, r_labels)
+                da_outputs = self.model(da_input_ids, attention_mask=da_input_mask, labels=da_labels,
+                                        return_dict=True)  # prob [batch_size, seq_len, 1]
+                loss += da_outputs.loss
 
             if data_type == "train":
                 loss = loss / self.opt.gradient_accumulation_steps
@@ -139,25 +137,13 @@ class Trainer(BaseTrainer):
                     self.optim_schedule.zero_grad()
 
             # sta
-            # self._stats(stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
+            generated = self.eval_gen(data_type, epoch, input_ids, input_mask, labels)
             self._stats(stats, loss.item(), generated, labels)
-            # if data_type == "train" and self.opt.report_every > 0 and step % self.opt.report_every == 0:
-            #     post_fix = {
-            #         "epoch": epoch,
-            #         "iter": step,
-            #         "lr": self.optim_schedule.learning_rate()
-            #     }
-            #     post_fix.update(stats.report())
-            #     data_loader.write(
-            #         "\n" + str({k: (round(v, 5) if isinstance(v, float) else v) for k, v in post_fix.items()}))
-            #     sys.stdout.flush()
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code))
+
         self._report(stats, data_type, epoch)
-        # return round(stats.xent(), 5)
-        return round(100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP),
-                     4) if data_type != "train" and epoch > self.skip_report_eval_steps else -round(
-            stats.xent(), 5)
+        return self.metric(data_type, epoch, stats)
 
     def _stats(self, stats: Statistics, loss, preds, target):
         non_padding = target.ne(-100)
@@ -177,7 +163,7 @@ class Trainer(BaseTrainer):
                 logger.info("label: {} ".format(labels_dec[i]))
                 logger.info("--------------------------------------")
             self.show_case = False
-        assert len(preds_dec) == len(labels_dec)
+
         total_utter_number = 0
         correct_utter_number = 0
         TP, FP, FN = 0, 0, 0
@@ -205,10 +191,6 @@ class Trainer(BaseTrainer):
             "FP": FP,
             "correct_utter_number": correct_utter_number,
             "total_utter_number": total_utter_number
-            # "d_tp": (preds.eq(1) & target.eq(1)).masked_select(non_padding).sum().item(),
-            # "d_fp": (preds.eq(1) & target.eq(0)).masked_select(non_padding).sum().item(),
-            # "d_tn": (preds.eq(0) & target.eq(0)).masked_select(non_padding).sum().item(),
-            # "d_fn": (preds.eq(0) & target.eq(1)).masked_select(non_padding).sum().item(),
         }
         stats.update(loss * num_non_padding, num_non_padding, metrics)
 
@@ -226,3 +208,38 @@ class Trainer(BaseTrainer):
                 "Joint accuracy %.2f " % (100 * stats.correct_utter_number / stats.total_utter_number) +
                 "lr: {}".format(self.optim_schedule.get_lr())
             )
+
+    def eval_gen(self, data_type, epoch, input_ids, input_mask, labels):
+        if data_type != "train" and epoch > self.skip_report_eval_steps:
+            self.model.eval()
+            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=labels.size(1) + 1)
+            generated = generated[:, 1:]
+            if generated.size(1) < labels.size(1):
+                generated = pad_sequence([labels[0]] + [one for one in generated], batch_first=True,
+                                         padding_value=self.tokenizer.pad_token_id)[1:]
+            self.model.train()
+            return generated
+        else:
+            return None
+
+    def metric(self, data_type, epoch, stats):
+        if data_type != "train" and epoch > self.skip_report_eval_steps:
+            return round(100 * 2 * stats.TP / (2 * stats.TP + stats.FN + stats.FP), 4)
+        else:
+            return -round(stats.xent(), 5)
+
+    def get_da(self, r_input_ids, r_input_mask, r_labels):
+        r_generated = self.model.generate(r_input_ids,
+                                          attention_mask=r_input_mask,
+                                          max_length=r_labels.size(1) + 10,
+                                          num_beams=self.beam,
+                                          num_return_sequences=self.beam)
+        r_generated = r_generated[:, 1:]
+        bos_idx = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize("query: "))
+        bos_tensor = torch.tensor(bos_idx)
+        bos_tensor.to(self.device)
+        bos_tensor = bos_tensor.repeat(r_generated.size(0), 1)
+        da_input_ids = torch.cat([bos_tensor, r_generated], dim=1)
+        da_input_mask = (da_input_ids > 0).long()
+        da_labels = torch.cat([x.repeat(self.beam, 1) for x in r_input_ids[:, 3:]])
+        return da_input_ids, da_input_mask, da_labels

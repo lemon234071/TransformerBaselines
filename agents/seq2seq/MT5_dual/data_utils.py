@@ -8,8 +8,8 @@ from torch.nn.utils.rnn import pad_sequence
 logger = logging.getLogger(__file__)
 
 
-def build_dataset(dataset, tokenizer):
-    logger.info("Tokenize and encode the dataset")
+def build_dataset(dataset, tokenizer, name):
+    logger.info("Tokenize and encode the dataset {} ".format(name))
     instances = collections.defaultdict(list)
     for line in dataset:
         x = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(line[0]))
@@ -35,8 +35,8 @@ def build_dataset(dataset, tokenizer):
     return instances
 
 
-def collate(dataset, pad_id, batch_first=True):
-    logger.info("Pad inputs and convert to Tensor")
+def collate(dataset, pad_id, name, batch_first=True):
+    logger.info("Pad inputs and convert to Tensor {} ".format(name))
     tensor_dataset = []
     for input_name in dataset.keys():
         if "pad" in input_name:
@@ -52,6 +52,7 @@ def collate(dataset, pad_id, batch_first=True):
             input_tensor = torch.tensor(dataset[input_name], dtype=torch.long)
         tensor_dataset.append(input_tensor)
     logging.info("Max len of input tensor is %d" % tensor_dataset[0].shape[1])
+    logging.info("Max len of label tensor is %d" % tensor_dataset[-1].shape[1])
     return tensor_dataset
 
 

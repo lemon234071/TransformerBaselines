@@ -61,6 +61,7 @@ class BaseTrainer(object):
             os.makedirs(file_path)
         model_to_save = self.model.module if hasattr(self.model, 'module') else self.model
         model_to_save.save_pretrained(file_path)
+        self.tokenizer.save_pretrained(file_path)
 
         # Save training arguments together with the trained model
         torch.save(self.opt, os.path.join(file_path, 'training_args.bin'))

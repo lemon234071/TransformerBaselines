@@ -97,7 +97,7 @@ def main():
         patience = 0
         for e in range(opt.epochs):
             trainer.train(e)
-            trainer.show_case = True
+            #trainer.show_case = True
             val_metric = trainer.evaluate(e, "valid")
             last_metric = val_metric
             if best_metric < val_metric:
