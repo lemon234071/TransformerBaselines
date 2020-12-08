@@ -57,13 +57,14 @@ class Trainer(BaseTrainer):
         self.dual = opt.dual
         self.da = opt.da
         self.da_data = []
+        self.dump_da = opt.dump_da
         self.load_da = opt.load_da
         self.beam = opt.beam
 
     def load_data(self, datasets, infer=False):
         for k, v in datasets.items():
             # self._dataset[type] = BertDataset(self.tokenizer, data, max_len=self.opt.max_len)
-            if self.load_da:
+            if self.load_da and k == "train":
                 with open(self.load_da, encoding="utf-8") as f:
                     da_data = json.load(f)
                     print(da_data[0])
@@ -132,6 +133,8 @@ class Trainer(BaseTrainer):
 
             # reverse forward
             if self.dual:
+                r_input_ids, r_input_mask, r_labels = tuple(
+                    x.to(self.device) for x in [r_input_ids, r_input_mask, r_labels])
                 reverse_outputs = self.model(r_input_ids, attention_mask=r_input_mask, labels=r_labels,
                                              return_dict=True)  # prob [batch_size, seq_len, 1]
                 reverse_loss = reverse_outputs.loss
@@ -161,6 +164,7 @@ class Trainer(BaseTrainer):
         if data_type == "train" and self.da and self.dump_da:
             with open(self.dump_da, "w", encoding="utf-8") as f:
                 json.dump(self.da_data, f, ensure_ascii=False)
+            exit()
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code))
 
