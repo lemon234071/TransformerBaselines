@@ -30,8 +30,8 @@ class Trainer(BaseTrainer):
         agent.add_argument('--dual', type=bool, default=False)
         agent.add_argument('--da', type=bool, default=False)
         agent.add_argument('--load_da', type=str, default="")
-        agent.add_argument('--dump_da', type=str, default="")
         agent.add_argument('--beam', type=int, default=1)
+        agent.add_argument('--infer_task', type=str, default="nlu")
 
     def __init__(self, opt, device):
         super(Trainer, self).__init__(opt, device)
@@ -56,10 +56,9 @@ class Trainer(BaseTrainer):
         self.skip_report_eval_steps = opt.skip_report_eval_steps
         self.dual = opt.dual
         self.da = opt.da
-        self.da_data = []
-        self.dump_da = opt.dump_da
         self.load_da = opt.load_da
         self.beam = opt.beam
+        self.infer_task = opt.infer_task
 
     def load_data(self, datasets, infer=False):
         for k, v in datasets.items():
@@ -67,7 +66,7 @@ class Trainer(BaseTrainer):
             if self.load_da and k == "train":
                 with open(self.load_da, encoding="utf-8") as f:
                     da_data = json.load(f)
-                    print(da_data[0])
+                    print(da_data[:3])
                 print(len(v))
                 v.extend(da_data)
                 print(len(v))
@@ -92,8 +91,15 @@ class Trainer(BaseTrainer):
         for step, batch in data_loader:
             input_ids, input_mask, labels, r_input_ids, r_input_mask, r_labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
-            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=100)
+            gen_input, gen_mask = (input_ids, input_mask) if self.infer_task == "nlu" else (r_input_ids, r_input_mask)
+            generated = self.model.generate(gen_input, attention_mask=gen_mask, max_length=150, num_beams=self.beam, num_return_sequences=self.beam)
             dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+
+            if self.infer_task != "nlu":
+                da_labels_dec = self.tokenizer.batch_decode(r_input_ids[:, 3:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+                da_labels_dec = sum([[x, x, x] for x in da_labels_dec])
+                dec = [[x, y] for x, y in zip(dec, da_labels_dec)]
+
             out_put.extend(dec)
             # self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)
 
@@ -141,7 +147,7 @@ class Trainer(BaseTrainer):
                 loss += reverse_loss
 
             # data augment
-            if data_type == "train" and self.da and not self.load_da:
+            if data_type == "train" and self.da:
                 r_input_ids, r_input_mask, r_labels = tuple(
                     x.to(self.device) for x in [r_input_ids, r_input_mask, r_labels])
                 da_input_ids, da_input_mask, da_labels = self.get_da(r_input_ids, r_input_mask, r_labels)
@@ -160,11 +166,6 @@ class Trainer(BaseTrainer):
             # sta
             generated = self.eval_gen(data_type, epoch, input_ids, input_mask, labels)
             self._stats(stats, loss.item(), generated, labels)
-
-        if data_type == "train" and self.da and self.dump_da:
-            with open(self.dump_da, "w", encoding="utf-8") as f:
-                json.dump(self.da_data, f, ensure_ascii=False)
-            exit()
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code))
 
@@ -267,10 +268,4 @@ class Trainer(BaseTrainer):
         da_input_ids = torch.cat([bos_tensor, r_generated], dim=1)
         da_input_mask = (da_input_ids > 0).long()
         da_labels = torch.cat([x.repeat(self.beam, 1) for x in r_input_ids[:, 3:]])
-        if self.dump_da:
-            da_input_dec = self.tokenizer.batch_decode(da_input_ids, skip_special_tokens=True,
-                                                       clean_up_tokenization_spaces=False)
-            da_labels_dec = self.tokenizer.batch_decode(da_labels, skip_special_tokens=True,
-                                                        clean_up_tokenization_spaces=False)
-            self.da_data.extend([[x, y] for x, y in zip(da_input_dec, da_labels_dec)])
         return da_input_ids, da_input_mask, da_labels

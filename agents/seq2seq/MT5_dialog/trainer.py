@@ -88,7 +88,8 @@ class Trainer(BaseTrainer):
         data_loader = tqdm.tqdm(enumerate(data_loader),
                                 desc="Epoch_%s:%d" % (str_code, epoch),
                                 total=len(data_loader),
-                                bar_format="{l_bar}{r_bar}")
+                                bar_format="{l_bar}{r_bar}",
+                                mininterval=2)
 
         logger.info("***** Running *****")
         # logger.info("  Num examples = %d", len(self.train_dataset))
