@@ -13,7 +13,7 @@ from transformers import T5Tokenizer, MT5Config, MT5ForConditionalGeneration
 from utils import Statistics
 from agents.trainer_base import BaseTrainer
 from agents.optim_schedule import ScheduledOptim, _get_optimizer
-from .data_utils import build_dataset, collate
+from agents.data_utils import collate
 
 logger = logging.getLogger(__file__)
 
@@ -30,9 +30,7 @@ class Trainer(BaseTrainer):
         agent.add_argument('--checkpoint', type=str, default="google/mt5-small")
         agent.add_argument('--dual', type=bool, default=False)
         agent.add_argument('--da', type=bool, default=False)
-        agent.add_argument('--load_da', type=str, default="")
         agent.add_argument('--beam', type=int, default=1)
-        agent.add_argument('--infer_task', type=str, default="nlu")
 
     def __init__(self, opt, device):
         super(Trainer, self).__init__(opt, device)
@@ -57,28 +55,16 @@ class Trainer(BaseTrainer):
         self.skip_report_eval_steps = opt.skip_report_eval_steps
         self.dual = opt.dual
         self.da = opt.da
-        self.load_da = opt.load_da
         self.beam = opt.beam
-        self.infer_task = opt.infer_task
 
-    def load_data(self, datasets, infer=False):
-        for k, v in datasets.items():
-            # self._dataset[type] = BertDataset(self.tokenizer, data, max_len=self.opt.max_len)
-            if self.load_da and k == "train":
-                with open(self.load_da, encoding="utf-8") as f:
-                    da_data = json.load(f)
-                    print(da_data[:3])
-                print(len(v))
-                v.extend(da_data)
-                print(len(v))
-            self._dataset[k] = build_dataset(v, self.tokenizer, k)
-            tensor_dataset = collate(self._dataset[k], self.tokenizer.pad_token_id, k)
-            dataset = TensorDataset(*tensor_dataset)
-            shuffle = (k == "train") and not infer
-            self._dataloader[k] = DataLoader(dataset,
-                                             batch_size=self.opt.batch_size,
-                                             num_workers=self.opt.num_workers,
-                                             shuffle=shuffle)
+    def load_data(self, data_type, dataset, build_dataset, infer=False):
+        self.dataset[data_type] = build_dataset(data_type, dataset, self.tokenizer)
+        tensor_dataset = collate(self.dataset[data_type], self.tokenizer.pad_token_id, data_type)
+        dataset = TensorDataset(*tensor_dataset)
+        self._dataloader[data_type] = DataLoader(dataset,
+                                                 batch_size=self.opt.batch_size,
+                                                 num_workers=self.opt.num_workers,
+                                                 shuffle=(data_type == "train"))
 
     def infer(self, data_type):
         data_loader = self._dataloader[data_type]
@@ -92,14 +78,9 @@ class Trainer(BaseTrainer):
         for step, batch in data_loader:
             input_ids, input_mask, labels, r_input_ids, r_input_mask, r_labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
-            gen_input, gen_mask = (input_ids, input_mask) if self.infer_task == "nlu" else (r_input_ids, r_input_mask)
-            generated = self.model.generate(gen_input, attention_mask=gen_mask, max_length=150, num_beams=self.beam, num_return_sequences=self.beam)
+            generated = self.model.generate(input_ids, attention_mask=input_mask, max_length=150, num_beams=self.beam,
+                                            num_return_sequences=self.beam)
             dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-
-            if self.infer_task != "nlu":
-                da_labels_dec = self.tokenizer.batch_decode(r_input_ids[:, 3:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
-                da_labels_dec = list(itertools.chain(*[[x for _ in range(self.beam)] for x in da_labels_dec]))
-                dec = [[x, y] for x, y in zip(dec, da_labels_dec)]
 
             out_put.extend(dec)
             # self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)

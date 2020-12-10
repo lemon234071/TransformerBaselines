@@ -127,7 +127,7 @@ def main():
                     logger.info("lr: {} ".format(trainer.optim_schedule.get_lr()) + "patience: {} ".format(patience))
                 if patience >= opt.early_stop:
                     break
-            logger.info('Best test metric {}'.format(test_metric))
+        logger.info('Best test metric {}'.format(test_metric))
 
 
 if __name__ == '__main__':
