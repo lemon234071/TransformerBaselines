@@ -37,6 +37,8 @@ parser = argparse.ArgumentParser()
 # agent
 parser.add_argument("--agent", type=str, required=True,
                     help="Agent name")
+parser.add_argument("--task", type=str, required=True,
+                    help="Agent name")
 
 # data
 parser.add_argument("--dataset_path", type=str, default="data/catslu/hyps/map/",
