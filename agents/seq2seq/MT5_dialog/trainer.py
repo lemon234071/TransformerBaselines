@@ -1,7 +1,7 @@
-import os
 import tqdm
 import logging
 import platform
+import itertools
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -26,6 +26,7 @@ class Trainer(BaseTrainer):
 
         agent.add_argument('--checkpoint', type=str, default="google/mt5-small")
         agent.add_argument('--num_beams', type=int, default=1)
+        agent.add_argument('--with_label', type=bool, default=False)
 
     def __init__(self, opt, device):
         super(Trainer, self).__init__(opt, device)
@@ -49,6 +50,7 @@ class Trainer(BaseTrainer):
 
         self.skip_report_eval_steps = opt.skip_report_eval_steps
         self.num_beams = opt.num_beams
+        self.with_label = opt.with_label
 
     def load_data(self, data_type, dataset, build_dataset, infer=False):
         self.dataset[data_type] = build_dataset(data_type, dataset, self.tokenizer)
@@ -74,6 +76,12 @@ class Trainer(BaseTrainer):
             generated = self.model.generate(input_ids, attention_mask=input_mask, num_beams=self.num_beams,
                                             num_return_sequences=self.num_beams)
             dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            if self.with_label:
+                da_labels_dec = self.tokenizer.batch_decode(input_ids[:, 3:], skip_special_tokens=True,
+                                                            clean_up_tokenization_spaces=False)
+                da_labels_dec = list(itertools.chain(*[[x for _ in range(self.num_beams)] for x in da_labels_dec]))
+                dec = [[x, y] for x, y in zip(dec, da_labels_dec)]
+
             out_put.extend(dec)
             # self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)
 
