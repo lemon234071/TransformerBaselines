@@ -38,10 +38,10 @@ class BaseTrainer(object):
         self.opt = opt
         self.device = device
 
-        self._dataset = {}
+        self.dataset = {}
         self._dataloader = {}
 
-    def load_data(self, datasets, infer=False):
+    def load_data(self, data_type, dataset, build_dataset, infer=False):
         raise NotImplementedError
 
     def train(self, epoch, data_type="train"):

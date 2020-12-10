@@ -48,23 +48,30 @@ parser.add_argument('--save_name', type=str, default="")
 parser.add_argument('--epochs', default=100000, type=int)
 parser.add_argument('--early_stop', default=3, type=int)
 parser.add_argument('--mode', type=str, default="train")
+parser.add_argument('--lr_reduce_patience', default=1, type=int)
+parser.add_argument('--lr_decay', type=float, default=0.5)
 
-# model
+# infer
 parser.add_argument('--result_path', type=str, default="")
+parser.add_argument('--infer_data', type=str, default="test")
 
 
-def get_agent(agent_name):
+def get_agent_task(opt):
+    agent_name = opt.get('agent')
+    task_name = opt.get('task')
     # "agents.bert_agents.sequence_labeling"
     trainer_module = importlib.import_module("agents." + agent_name + ".trainer")
     trainer_class = getattr(trainer_module, "Trainer")
     getdata_module = importlib.import_module("agents." + agent_name + ".data_process")
     getdata_class = getattr(getdata_module, "get_datasets")
-    return trainer_class, getdata_class
+    builddata_module = importlib.import_module("tasks." + task_name)
+    builddata_class = getattr(builddata_module, "build_dataset")
+    return trainer_class, getdata_class, builddata_class
 
 
 parsed = vars(parser.parse_known_args()[0])
 # trainer_class, getdata_class = AGENT_CLASSES[parsed.get('agent')]
-trainer_class, getdata_class = get_agent(parsed.get('agent'))
+trainer_class, getdata_class, builddata_class = get_agent_task(parsed)
 trainer_class.add_cmdline_args(parser)
 opt = parser.parse_args()
 
@@ -74,13 +81,16 @@ def main():
     # model_class = getattr(my_module, class_name)
 
     logger.info("Arguments: %s", pformat(opt))
+
     trainer = trainer_class(opt, device)
+
     datasets = getdata_class(opt.dataset_path)
-    trainer.load_data(datasets)
+    for k, v in datasets.items():
+        trainer.load_data(k, v, builddata_class)
 
     if not os.path.exists("checkpoint"):
         os.mkdir("checkpoint")
-    best_checkpoint = opt.save_dir + opt.save_name + "-" + parsed.get('agent') + "_" + \
+    best_checkpoint = opt.save_dir + opt.save_name + "_" + parsed.get('agent') + "_" + \
                       opt.dataset_path.replace("/", "-").replace("\\", "-") + '_best_model'
 
     if opt.mode == "infer":
@@ -88,7 +98,9 @@ def main():
             opt.checkpoint = best_checkpoint
         logger.info("load checkpoint from {} ".format(opt.checkpoint))
         trainer.load(opt.checkpoint)
-        result = trainer.infer("test")
+        if opt.infer_data not in trainer.dataset:
+            raise Exception("%s does not exists in datasets" % opt.infer_data)
+        result = trainer.infer(opt.infer_data)
         if opt.result_path:
             save_json(result, opt.result_path)
     else:
@@ -97,7 +109,6 @@ def main():
         patience = 0
         for e in range(opt.epochs):
             trainer.train(e)
-            #trainer.show_case = True
             val_metric = trainer.evaluate(e, "valid")
             last_metric = val_metric
             if best_metric < val_metric:
@@ -110,11 +121,10 @@ def main():
                 logger.info('Better than last')
             else:
                 patience += 1
-                if patience >= 3:
-                    trainer.optim_schedule.set_lr(trainer.optim_schedule.get_lr() * 0.5)
-                    logger.info("lr: {} ".format(trainer.optim_schedule.get_lr()) +
-                                "patience: {} ".format(patience))
-                if patience > opt.early_stop:
+                if patience >= opt.lr_reduce_patience:
+                    trainer.optim_schedule.set_lr(trainer.optim_schedule.get_lr() * opt.lr_decay)
+                    logger.info("lr: {} ".format(trainer.optim_schedule.get_lr()) + "patience: {} ".format(patience))
+                if patience >= opt.early_stop:
                     break
             logger.info('Best test metric {}'.format(test_metric))
 

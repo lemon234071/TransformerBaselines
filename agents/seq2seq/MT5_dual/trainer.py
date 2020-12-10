@@ -3,6 +3,7 @@ import json
 import tqdm
 import logging
 import platform
+import itertools
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -97,7 +98,7 @@ class Trainer(BaseTrainer):
 
             if self.infer_task != "nlu":
                 da_labels_dec = self.tokenizer.batch_decode(r_input_ids[:, 3:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
-                da_labels_dec = sum([[x, x, x] for x in da_labels_dec])
+                da_labels_dec = list(itertools.chain(*[[x for _ in range(self.beam)] for x in da_labels_dec]))
                 dec = [[x, y] for x, y in zip(dec, da_labels_dec)]
 
             out_put.extend(dec)

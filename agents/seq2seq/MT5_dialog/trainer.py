@@ -11,7 +11,7 @@ from transformers import T5Tokenizer, MT5Config, MT5ForConditionalGeneration
 from utils import Statistics
 from agents.trainer_base import BaseTrainer
 from agents.optim_schedule import ScheduledOptim, _get_optimizer
-from .data_utils import build_dataset, collate
+from agents.data_utils import collate
 
 logger = logging.getLogger(__file__)
 
@@ -26,6 +26,7 @@ class Trainer(BaseTrainer):
         # memory and knowledge arguments
 
         agent.add_argument('--checkpoint', type=str, default="google/mt5-small")
+        agent.add_argument('--num_beams', type=int, default=1)
 
     def __init__(self, opt, device):
         super(Trainer, self).__init__(opt, device)
@@ -48,18 +49,16 @@ class Trainer(BaseTrainer):
         self.optim_schedule = ScheduledOptim(opt, _optimizer)
 
         self.skip_report_eval_steps = opt.skip_report_eval_steps
+        self.num_beams = opt.num_beams
 
-    def load_data(self, datasets, infer=False):
-        for k, v in datasets.items():
-            # self._dataset[type] = BertDataset(self.tokenizer, data, max_len=self.opt.max_len)
-            self._dataset[k] = build_dataset(k, v, self.tokenizer)
-            tensor_dataset = collate(self._dataset[k], self.tokenizer.pad_token_id)
-            dataset = TensorDataset(*tensor_dataset)
-            shuffle = (k == "train") and not infer
-            self._dataloader[k] = DataLoader(dataset,
-                                             batch_size=self.opt.batch_size,
-                                             num_workers=self.opt.num_workers,
-                                             shuffle=shuffle)
+    def load_data(self, data_type, dataset, build_dataset, infer=False):
+        self.dataset[data_type] = build_dataset(data_type, dataset, self.tokenizer)
+        tensor_dataset = collate(self.dataset[data_type], self.tokenizer.pad_token_id, data_type)
+        dataset = TensorDataset(*tensor_dataset)
+        self._dataloader[data_type] = DataLoader(dataset,
+                                                 batch_size=self.opt.batch_size,
+                                                 num_workers=self.opt.num_workers,
+                                                 shuffle=(data_type == "train"))
 
     def infer(self, data_type):
         data_loader = self._dataloader[data_type]
@@ -73,7 +72,8 @@ class Trainer(BaseTrainer):
         for step, batch in data_loader:
             input_ids, input_mask, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
-            generated = self.model.generate(input_ids, attention_mask=input_mask)
+            generated = self.model.generate(input_ids, attention_mask=input_mask, num_beams=self.num_beams,
+                                            num_return_sequences=self.num_beams)
             dec = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=False)
             out_put.extend(dec)
             # self._stats(stats, loss.item(), logits.softmax(dim=-1), labels)
@@ -107,7 +107,8 @@ class Trainer(BaseTrainer):
             input_ids, input_mask, labels = tuple(
                 input_tensor.to(self.device) for input_tensor in batch)
 
-            outputs = self.model(input_ids, attention_mask=input_mask, labels=labels, return_dict=True)  # prob [batch_size, seq_len, 1]
+            outputs = self.model(input_ids, attention_mask=input_mask, labels=labels,
+                                 return_dict=True)  # prob [batch_size, seq_len, 1]
             loss, logits = outputs.loss, outputs.logits
 
             if data_type == "train":
