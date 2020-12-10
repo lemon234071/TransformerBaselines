@@ -62,10 +62,9 @@ def get_agent_task(opt):
     # "agents.bert_agents.sequence_labeling"
     trainer_module = importlib.import_module("agents." + agent_name + ".trainer")
     trainer_class = getattr(trainer_module, "Trainer")
-    getdata_module = importlib.import_module("agents." + agent_name + ".data_process")
-    getdata_class = getattr(getdata_module, "get_datasets")
-    builddata_module = importlib.import_module("tasks." + task_name)
-    builddata_class = getattr(builddata_module, "build_dataset")
+    data_module = importlib.import_module("tasks." + task_name)
+    getdata_class = getattr(data_module, "get_datasets")
+    builddata_class = getattr(data_module, "build_dataset")
     return trainer_class, getdata_class, builddata_class
 
 
