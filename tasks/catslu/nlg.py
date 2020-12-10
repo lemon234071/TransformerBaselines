@@ -31,9 +31,9 @@ def build_dataset(name, dataset, tokenizer):
     instances = collections.defaultdict(list)
     for line in dataset:
         input_idx = tokenizer.convert_tokens_to_ids(
-            tokenizer.tokenize("post: " + line[0]))
+            tokenizer.tokenize("semantic: " + line[1]))
         label_idx = tokenizer.convert_tokens_to_ids(
-            tokenizer.tokenize(line[1]))
+            tokenizer.tokenize(line[0]))
         input_seq = input_idx
         label_seq = label_idx + [tokenizer.eos_token_id]
 
