@@ -40,8 +40,9 @@ class Trainer(BaseTrainer):
         self.model = MT5ForConditionalGeneration(self.config).to(device) \
             if platform.system() == 'Windows' else \
             MT5ForConditionalGeneration.from_pretrained(opt.checkpoint, config=self.config).to(device)
-        if self.keep_tokens:
-            self.truncate_MT5()
+        if opt.keep_tokens:
+            self.truncate_MT5(opt.keep_tokens)
+            exit()
         # raise Exception("handle the embedding")
         # if os.path.isdir(opt.checkpoint):
         #     self.model.
@@ -57,8 +58,8 @@ class Trainer(BaseTrainer):
         self.num_beams = opt.num_beams
         self.with_label = opt.with_label
 
-    def truncate_MT5(self):
-        keep_tokens = json.load(open(self.keep_tokens))
+    def truncate_MT5(self, keep_tokens_path):
+        keep_tokens = json.load(open(keep_tokens_path))
         print("truncated vocab size: ", len(keep_tokens))
         self.model.config.vocab_size = len(keep_tokens)
         self.model.shared.num_embeddings = len(keep_tokens)
