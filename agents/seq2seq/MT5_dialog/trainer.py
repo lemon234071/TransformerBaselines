@@ -12,7 +12,6 @@ from utils import Statistics
 from agents.trainer_base import BaseTrainer
 from agents.optim_schedule import ScheduledOptim, _get_optimizer
 from agents.data_utils import collate
-from .model import CT5ForConditionalGeneration
 
 logger = logging.getLogger(__file__)
 
@@ -29,7 +28,6 @@ class Trainer(BaseTrainer):
         agent.add_argument('--checkpoint', type=str, default="google/mt5-small")
         agent.add_argument('--num_beams', type=int, default=1)
         agent.add_argument('--with_label', type=bool, default=False)
-        agent.add_argument('--keep_tokens', type=str, default="")
 
     def __init__(self, opt, device):
         super(Trainer, self).__init__(opt, device)
@@ -40,9 +38,6 @@ class Trainer(BaseTrainer):
         self.model = MT5ForConditionalGeneration(self.config).to(device) \
             if platform.system() == 'Windows' else \
             MT5ForConditionalGeneration.from_pretrained(opt.checkpoint, config=self.config).to(device)
-        if opt.keep_tokens:
-            self.truncate_MT5(opt.keep_tokens)
-            exit()
         # raise Exception("handle the embedding")
         # if os.path.isdir(opt.checkpoint):
         #     self.model.
@@ -63,9 +58,9 @@ class Trainer(BaseTrainer):
         print("truncated vocab size: ", len(keep_tokens))
         self.model.config.vocab_size = len(keep_tokens)
         self.model.shared.num_embeddings = len(keep_tokens)
-        self.model.shared.weight = self.model.shared.weight[keep_tokens]
+        self.model.shared.weight.data = self.model.shared.weight[keep_tokens].data
         self.model.lm_head.out_features = len(keep_tokens)
-        self.model.lm_head.weight = self.model.lm_head.weight[keep_tokens]
+        self.model.lm_head.weight.data = self.model.lm_head.weight[keep_tokens].data
         self.save("checkpoint/truncated_MT5/")
 
     def load_data(self, data_type, dataset, build_dataset, infer=False):
