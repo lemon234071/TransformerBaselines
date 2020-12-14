@@ -88,7 +88,7 @@ def main():
     datasets = getdata_class(opt.dataset_path)
     for k, v in datasets.items():
         trainer.load_data(k, v, builddata_class, infer=opt.mode == "infer")
-    trainer.set_scheduler()
+    trainer.set_optim_schedule()
 
     if not os.path.exists("checkpoint"):
         os.mkdir("checkpoint")

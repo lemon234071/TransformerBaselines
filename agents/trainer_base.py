@@ -41,12 +41,11 @@ class BaseTrainer(object):
         self.dataset = {}
         self._dataloader = {}
 
-        self._optimizer = _get_optimizer(self.model, opt)
-
     def load_data(self, data_type, dataset, build_dataset, infer=False):
         raise NotImplementedError
 
-    def set_scheduler(self):
+    def set_optim_schedule(self):
+        self._optimizer = _get_optimizer(self.model, self.opt)
         self.optim_schedule = ScheduledOptim(self.opt, self._optimizer,
                                              self.opt.epochs * len(self._dataloader["train"]))
 
