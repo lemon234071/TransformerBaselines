@@ -1,3 +1,4 @@
+import os
 import tqdm
 import json
 import logging
@@ -64,7 +65,13 @@ class Trainer(BaseTrainer):
         self.save("checkpoint/truncated_MT5/")
 
     def load_data(self, data_type, dataset, build_dataset, infer=False):
-        self.dataset[data_type] = build_dataset(data_type, dataset, self.tokenizer)
+        dataset_cache = self.opt.task + '_' + type(self.tokenizer).__name__
+        if self.opt.dataset_cache and os.path.isfile(dataset_cache):
+            logger.info("Load tokenized dataset from cache at %s", dataset_cache)
+            dataset = torch.load(dataset_cache)
+        else:
+            dataset = build_dataset(data_type, dataset, self.tokenizer)
+        self.dataset[data_type] = dataset
         tensor_dataset = collate(self.dataset[data_type], self.tokenizer.pad_token_id, data_type)
         dataset = TensorDataset(*tensor_dataset)
         self._dataloader[data_type] = DataLoader(dataset,
@@ -136,19 +143,25 @@ class Trainer(BaseTrainer):
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.max_grad_norm)
                     self.optim_schedule.step()
                     self.optim_schedule.zero_grad()
+                    if self.opt.eval_every > 0 and step % (
+                            self.opt.eval_every * self.opt.gradient_accumulation_steps) == 0:
+                        self.evaluate(epoch)
+                        self.model.train()
 
             # sta
-            self._stats(stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
+            self._stats(data_loader, stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code))
         self._report(stats, data_type, epoch)
 
         return -round(stats.xent(), 6)
 
-    def _stats(self, stats: Statistics, loss, preds, target):
+    def _stats(self, pbar, stats: Statistics, loss, preds, target):
+        # %g
+        pbar.set_postfix(loss=loss, lr=self.optim_schedule.get_lr())
+
         non_padding = target.ne(-100)
         num_non_padding = non_padding.sum().item()
-
         metrics = {
             "n_correct": preds.eq(target).masked_select(non_padding).sum().item()
         }

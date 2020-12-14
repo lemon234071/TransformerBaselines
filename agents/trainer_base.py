@@ -17,6 +17,7 @@ class BaseTrainer(object):
         agent = argparser.add_argument_group('BaseTrainer Arguments')
         # add_common_cmdline_args(agent)
         # memory and knowledge arguments
+        agent.add_argument('--dataset_cache', action='store_true')
         agent.add_argument('--batch_size', default=8, type=int)
         agent.add_argument('--num_workers', default=8, type=int)
         agent.add_argument('--max_len', default=128, type=int)
@@ -30,7 +31,7 @@ class BaseTrainer(object):
         agent.add_argument("--max_grad_norm", type=float, default=1.0,
                            help="Clipping gradient norm")
         agent.add_argument('--skip_report_eval_steps', default=0, type=int)
-
+        agent.add_argument('--eval_every', default=-1, type=int)
         agent.add_argument('--report_every', default=-1, type=int)
 
     def __init__(self, opt, device):
