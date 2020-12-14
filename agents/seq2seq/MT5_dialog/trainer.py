@@ -71,6 +71,7 @@ class Trainer(BaseTrainer):
             dataset = torch.load(dataset_cache)
         else:
             dataset = build_dataset(data_type, dataset, self.tokenizer)
+            torch.save(dataset, dataset_cache)
         self.dataset[data_type] = dataset
         tensor_dataset = collate(self.dataset[data_type], self.tokenizer.pad_token_id, data_type)
         dataset = TensorDataset(*tensor_dataset)
