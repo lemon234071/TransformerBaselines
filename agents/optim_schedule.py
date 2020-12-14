@@ -28,11 +28,10 @@ class ScheduledOptim():
         # add_common_cmdline_args(agent)
         # memory and knowledge arguments
 
-        agent.add_argument("--lr_schedule", type=str,
-                           choices=['noam', 'noamwd', 'BERT', 'None'], default='noam')
-        agent.add_argument("--warmup_steps", default=5000, type=int)
+        agent.add_argument("--decay_method", type=str,
+                           choices=['linear', 'noam', 'noamwd', 'None'], default='None')
+        agent.add_argument("--warmup_steps", default=0, type=int)
         agent.add_argument("--weight_decay", default=0.01, type=float)
-        agent.add_argument("--decay_method", default=None, type=str)
         agent.add_argument("--adam_epsilon", default=1e-8, type=float)
         agent.add_argument("--start_decay_steps", default=None, type=str)
 
