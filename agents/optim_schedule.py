@@ -30,7 +30,7 @@ class ScheduledOptim():
 
         agent.add_argument("--lr_schedule", type=str,
                            choices=['noam', 'noamwd', 'BERT', 'None'], default='noam')
-        agent.add_argument("--warmup_steps", default=10000, type=int)
+        agent.add_argument("--warmup_steps", default=5000, type=int)
         agent.add_argument("--weight_decay", default=0.01, type=float)
         agent.add_argument("--decay_method", default=None, type=str)
         agent.add_argument("--adam_epsilon", default=1e-8, type=float)
@@ -42,7 +42,7 @@ class ScheduledOptim():
         self.init_lr = optim_opt.learning_rate
         self.lr = optim_opt.learning_rate
         self._learning_rate_decay_fn = make_learning_rate_decay_fn(optim_opt)
-        self._training_step = 1
+        self.training_step = 1
         self._decay_step = 1
 
     def zero_grad(self):
@@ -54,7 +54,7 @@ class ScheduledOptim():
         self._update_learning_rate()
         self._optimizer.step()
         self._decay_step += 1
-        self._training_step += 1
+        self.training_step += 1
 
     # def _get_lr_scale(self):
     #     # if self._learning_rate_decay_fn is None:
@@ -75,7 +75,8 @@ class ScheduledOptim():
         if self._learning_rate_decay_fn is None:
             return self.lr
         scale = self._learning_rate_decay_fn(self._decay_step)
-        return scale * self.lr
+        self.lr = scale * self.init_lr
+        return self.lr
 
     def _update_learning_rate(self):
         ''' Learning rate scheduling per step '''
@@ -87,7 +88,11 @@ class ScheduledOptim():
 
 def make_learning_rate_decay_fn(opt):
     """Returns the learning decay function from options."""
-    if opt.decay_method == 'noam':
+    if opt.decay_method == "linear":
+        return functools.partial(
+            linear_decay,
+            warmup_steps=opt.warmup_steps)
+    elif opt.decay_method == 'noam':
         return functools.partial(
             noam_decay,
             warmup_steps=opt.warmup_steps,
@@ -142,3 +147,8 @@ def exponential_decay(step, rate, decay_steps, start_step=0):
 def rsqrt_decay(step, warmup_steps):
     """Decay based on the reciprocal of the step square root."""
     return 1.0 / sqrt(max(step, warmup_steps))
+
+
+def linear_decay(step, warmup_steps, all_steps, stop_steps=0):
+    """Decay based on the reciprocal of the step."""
+    return max(all_steps - step, stop_steps) / all_steps if step > warmup_steps else 1.0

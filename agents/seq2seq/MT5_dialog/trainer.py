@@ -158,7 +158,7 @@ class Trainer(BaseTrainer):
 
     def _stats(self, pbar, stats: Statistics, loss, preds, target):
         # %g
-        pbar.set_postfix(loss=loss, lr=self.optim_schedule.get_lr())
+        pbar.set_postfix(loss=loss, lr=self.optim_schedule.get_lr(), step=self.optim_schedule.training_step)
 
         non_padding = target.ne(-100)
         num_non_padding = non_padding.sum().item()
