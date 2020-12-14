@@ -35,12 +35,12 @@ class ScheduledOptim():
         agent.add_argument("--adam_epsilon", default=1e-8, type=float)
         agent.add_argument("--start_decay_steps", default=None, type=str)
 
-    def __init__(self, optim_opt, optimizer):
+    def __init__(self, optim_opt, optimizer, num_training_steps):
         self._optimizer = optimizer
         self.n_warmup_steps = optim_opt.warmup_steps
         self.init_lr = optim_opt.learning_rate
         self.lr = optim_opt.learning_rate
-        self._learning_rate_decay_fn = make_learning_rate_decay_fn(optim_opt)
+        self._learning_rate_decay_fn = make_learning_rate_decay_fn(optim_opt, num_training_steps)
         self.training_step = 1
         self._decay_step = 1
 
@@ -85,12 +85,13 @@ class ScheduledOptim():
             param_group['lr'] = lr
 
 
-def make_learning_rate_decay_fn(opt):
+def make_learning_rate_decay_fn(opt, num_training_steps):
     """Returns the learning decay function from options."""
     if opt.decay_method == "linear":
         return functools.partial(
             linear_decay,
-            warmup_steps=opt.warmup_steps)
+            warmup_steps=opt.warmup_steps,
+            num_training_steps=num_training_steps)
     elif opt.decay_method == 'noam':
         return functools.partial(
             noam_decay,
@@ -148,6 +149,8 @@ def rsqrt_decay(step, warmup_steps):
     return 1.0 / sqrt(max(step, warmup_steps))
 
 
-def linear_decay(step, warmup_steps, all_steps, stop_steps=0):
+def linear_decay(step, warmup_steps, num_training_steps, stop_steps=0):
     """Decay based on the reciprocal of the step."""
-    return max(all_steps - step, stop_steps) / all_steps if step > warmup_steps else 1.0
+    if step < warmup_steps:
+        return float(step) / float(max(1, warmup_steps))
+    return max(0.0, float(max(num_training_steps - step, stop_steps)) / float(max(1, num_training_steps - warmup_steps)))

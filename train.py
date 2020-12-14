@@ -87,7 +87,8 @@ def main():
 
     datasets = getdata_class(opt.dataset_path)
     for k, v in datasets.items():
-        trainer.load_data(k, v, builddata_class)
+        trainer.load_data(k, v, builddata_class, infer=opt.mode == "infer")
+    trainer.set_scheduler()
 
     if not os.path.exists("checkpoint"):
         os.mkdir("checkpoint")
@@ -109,7 +110,7 @@ def main():
         test_metric = -10000
         patience = 0
         for e in range(opt.epochs):
-            trainer.train(e)
+            trainer.train_epoch(e)
             val_metric = trainer.evaluate(e, "valid")
             last_metric = val_metric
             if best_metric < val_metric:

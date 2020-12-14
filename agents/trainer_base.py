@@ -1,10 +1,9 @@
 import os
-import tqdm
 import logging
 import torch
 
-from utils import Statistics
 from agents.optim_schedule import ScheduledOptim
+from agents.optim_schedule import ScheduledOptim, _get_optimizer
 
 logger = logging.getLogger(__file__)
 
@@ -42,10 +41,16 @@ class BaseTrainer(object):
         self.dataset = {}
         self._dataloader = {}
 
+        self._optimizer = _get_optimizer(self.model, opt)
+
     def load_data(self, data_type, dataset, build_dataset, infer=False):
         raise NotImplementedError
 
-    def train(self, epoch, data_type="train"):
+    def set_scheduler(self):
+        self.optim_schedule = ScheduledOptim(self.opt, self._optimizer,
+                                             self.opt.epochs * len(self._dataloader["train"]))
+
+    def train_epoch(self, epoch, data_type="train"):
         self.model.train()
         return self.iteration(epoch, self._dataloader[data_type])
 

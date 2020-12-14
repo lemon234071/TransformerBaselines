@@ -11,7 +11,6 @@ from transformers import T5Tokenizer, MT5Config, MT5ForConditionalGeneration
 
 from utils import Statistics
 from agents.trainer_base import BaseTrainer
-from agents.optim_schedule import ScheduledOptim, _get_optimizer
 from agents.data_utils import collate
 
 logger = logging.getLogger(__file__)
@@ -47,8 +46,6 @@ class Trainer(BaseTrainer):
         #     self.model = nn.DataParallel(self.model, device_ids=[0,1,2])
 
         # _optimizer = optim.Adam(self.model.parameters(), lr=opt.lr, weight_decay=opt.weight_decay)
-        _optimizer = _get_optimizer(self.model, opt)
-        self.optim_schedule = ScheduledOptim(opt, _optimizer)
 
         self.skip_report_eval_steps = opt.skip_report_eval_steps
         self.num_beams = opt.num_beams
@@ -81,7 +78,7 @@ class Trainer(BaseTrainer):
         self._dataloader[data_type] = DataLoader(dataset,
                                                  batch_size=self.opt.batch_size,
                                                  num_workers=self.opt.num_workers,
-                                                 shuffle=(data_type == "train"))
+                                                 shuffle=(data_type == "train" and not infer))
 
     def infer(self, data_type):
         data_loader = self._dataloader[data_type]
@@ -151,19 +148,18 @@ class Trainer(BaseTrainer):
                             self.opt.eval_every * self.opt.gradient_accumulation_steps) == 0:
                         self.evaluate(epoch)
                         self.model.train()
+                    data_loader.set_postfix(loss=loss, lr=self.optim_schedule.get_lr(),
+                                            step=self.optim_schedule.training_step)
 
             # sta
-            self._stats(data_loader, stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
+            self._stats(stats, loss.item(), logits.softmax(dim=-1).argmax(dim=-1), labels)
 
         logger.info("Epoch{}_{}, ".format(epoch, str_code))
         self._report(stats, data_type, epoch)
 
         return -round(stats.xent(), 6)
 
-    def _stats(self, pbar, stats: Statistics, loss, preds, target):
-        # %g
-        pbar.set_postfix(loss=loss, lr=self.optim_schedule.get_lr(), step=self.optim_schedule.training_step)
-
+    def _stats(self, stats: Statistics, loss, preds, target):
         non_padding = target.ne(-100)
         num_non_padding = non_padding.sum().item()
         metrics = {

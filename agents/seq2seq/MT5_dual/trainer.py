@@ -64,7 +64,7 @@ class Trainer(BaseTrainer):
         self._dataloader[data_type] = DataLoader(dataset,
                                                  batch_size=self.opt.batch_size,
                                                  num_workers=self.opt.num_workers,
-                                                 shuffle=(data_type == "train"))
+                                                 shuffle=(data_type == "train" and not infer))
 
     def infer(self, data_type):
         data_loader = self._dataloader[data_type]
@@ -166,6 +166,7 @@ class Trainer(BaseTrainer):
         target_forgen[target == -100] = 0
         labels_dec = self.tokenizer.batch_decode(target_forgen, skip_special_tokens=True,
                                                  clean_up_tokenization_spaces=False)
+        self.tokenizer.batch_decode(target_forgen[:, 3:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
         # if self.show_case:
         #     for i in range(5):
         #         logger.info("pred: {} ".format(preds_dec[i]))
