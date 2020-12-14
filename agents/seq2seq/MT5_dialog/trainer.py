@@ -65,13 +65,16 @@ class Trainer(BaseTrainer):
         self.save("checkpoint/truncated_MT5/")
 
     def load_data(self, data_type, dataset, build_dataset, infer=False):
-        dataset_cache = self.opt.task + '_' + type(self.tokenizer).__name__
-        if self.opt.dataset_cache and os.path.isfile(dataset_cache):
-            logger.info("Load tokenized dataset from cache at %s", dataset_cache)
-            dataset = torch.load(dataset_cache)
+        if self.opt.dataset_cache and data_type == "train":
+            dataset_cache = self.opt.task + '_' + type(self.tokenizer).__name__
+            if os.path.isfile(dataset_cache):
+                logger.info("Load tokenized train dataset from cache at %s", dataset_cache)
+                dataset = torch.load(dataset_cache)
+            else:
+                dataset = build_dataset(data_type, dataset, self.tokenizer)
+                torch.save(dataset, dataset_cache)
         else:
             dataset = build_dataset(data_type, dataset, self.tokenizer)
-            torch.save(dataset, dataset_cache)
         self.dataset[data_type] = dataset
         tensor_dataset = collate(self.dataset[data_type], self.tokenizer.pad_token_id, data_type)
         dataset = TensorDataset(*tensor_dataset)
