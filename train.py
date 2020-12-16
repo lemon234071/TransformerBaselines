@@ -80,6 +80,10 @@ opt = parser.parse_args()
 def main():
     # my_module = importlib.import_module(module_name)
     # model_class = getattr(my_module, class_name)
+    if not os.path.exists(opt.save_dir):
+        os.mkdir(opt.save_dir)
+    opt.best_checkpoint_path = opt.save_dir + opt.save_name + "_" + parsed.get('task') + "_" + parsed.get(
+        'agent') + '_best_model'
 
     logger.info("Arguments: %s", pformat(opt))
 
@@ -88,17 +92,12 @@ def main():
     datasets = getdata_class(opt.dataset_path)
     for k, v in datasets.items():
         trainer.load_data(k, v, builddata_class, infer=opt.mode == "infer")
-    trainer.set_optim_schedule()
-
-    if not os.path.exists("checkpoint"):
-        os.mkdir("checkpoint")
-    best_checkpoint = opt.save_dir + opt.save_name + "_" + parsed.get('task') + "_" + parsed.get(
-        'agent') + '_best_model'
-    trainer.bes_checkpoint_path = best_checkpoint
+    if opt.mode == "train":
+        trainer.set_optim_schedule()
 
     if opt.mode == "infer":
-        if os.path.exists(best_checkpoint):
-            opt.checkpoint = best_checkpoint
+        if os.path.exists(opt.best_checkpoint_path):
+            opt.checkpoint = opt.best_checkpoint_path
         logger.info("load checkpoint from {} ".format(opt.checkpoint))
         trainer.load(opt.checkpoint)
         if opt.infer_data not in trainer.dataset:
