@@ -2,7 +2,6 @@ import os
 import logging
 import torch
 
-from agents.optim_schedule import ScheduledOptim
 from agents.optim_schedule import ScheduledOptim, _get_optimizer
 
 logger = logging.getLogger(__file__)
@@ -41,13 +40,24 @@ class BaseTrainer(object):
         self.dataset = {}
         self._dataloader = {}
 
+        self.gradient_accumulation_steps = opt.gradient_accumulation_steps
+        self.performance = {}
+        self.best_performance = -float("inf")
+        self.last_performance = -float("inf")
+        self.test_performance = -float("inf")
+        self.patience = 0
+        self.lr_reduce_patience = opt.lr_reduce_patience
+        self.lr_decay = opt.lr_decay
+        self.best_checkpoint_path = opt.best_checkpoint_path
+
     def load_data(self, data_type, dataset, build_dataset, infer=False):
         raise NotImplementedError
 
     def set_optim_schedule(self):
         self._optimizer = _get_optimizer(self.model, self.opt)
         self.optim_schedule = ScheduledOptim(self.opt, self._optimizer,
-                                             self.opt.epochs * len(self._dataloader["train"]))
+                                             self.opt.epochs * len(
+                                                 self._dataloader["train"]) / self.gradient_accumulation_steps)
 
     def train_epoch(self, epoch, data_type="train"):
         self.model.train()
@@ -55,7 +65,32 @@ class BaseTrainer(object):
 
     def evaluate(self, epoch, data_type="valid"):
         self.model.eval()
-        return self.iteration(epoch, self._dataloader[data_type], data_type=data_type)
+        valid_performance = self.iteration(epoch, self._dataloader[data_type], data_type=data_type)
+        if data_type == "valid":
+            if valid_performance < self.best_performance:
+                self.best_performance = valid_performance
+                self.save(self.best_checkpoint_path)
+                logger.info(
+                    'Best valid performance {} at epoch {}'.format(abs(self.best_performance), epoch))
+
+                if data_type == "valid" and "test" in self._dataloader:
+                    test_performance = self.iteration(epoch, self._dataloader["test"], "test")
+                    logger.info(
+                        'Test performance {} at epoch {}'.format(test_performance, epoch))
+                    self.test_performance = test_performance
+                self.patience = 0
+            elif valid_performance > self.last_performance:
+                logger.info('Valid performance {} better than last'.format(abs(valid_performance)))
+            else:
+                self.patience += 1
+                if self.patience >= self.lr_reduce_patience > 0:
+                    lr = self.optim_schedule.get_lr()
+                    self.optim_schedule.set_lr(lr * self.lr_decay)
+                    logger.info("lr decayed from {} to {} with patinece {}".format(lr, self.optim_schedule.get_lr(),
+                                                                                   self.patience))
+            self.last_performance = valid_performance
+
+        return valid_performance
 
     def infer(self, data_type):
         raise NotImplementedError

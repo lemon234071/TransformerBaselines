@@ -1,17 +1,13 @@
 import os
-import sys
-import time
-import math
 import tqdm
 import logging
 
 import torch
-import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader, TensorDataset
-from transformers import BertTokenizer, BertModel, BertConfig, BertForTokenClassification
+from transformers import BertTokenizer, BertConfig, BertForTokenClassification
 
-from utils import Statistics
+from agents.utils import Statistics
 from agents.optim_schedule import ScheduledOptim
 from .data_utils import build_dataset, collate
 

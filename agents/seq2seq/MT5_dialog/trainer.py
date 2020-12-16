@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import T5Tokenizer, MT5Config, MT5ForConditionalGeneration
 
-from utils import Statistics
+from agents.utils import Statistics
 from agents.trainer_base import BaseTrainer
 from agents.data_utils import collate
 
@@ -147,8 +147,10 @@ class Trainer(BaseTrainer):
                     if self.opt.eval_every > 0 and step % (
                             self.opt.eval_every * self.opt.gradient_accumulation_steps) == 0:
                         self.evaluate(epoch)
+                        if self.patience >= self.opt.early_stop > 0:
+                            return
                         self.model.train()
-                    data_loader.set_postfix(loss=loss, lr=self.optim_schedule.get_lr(),
+                    data_loader.set_postfix(loss=loss.item(), lr=self.optim_schedule.get_lr(),
                                             step=self.optim_schedule.training_step)
 
             # sta

@@ -1,4 +1,3 @@
-import os
 import tqdm
 import logging
 import platform
@@ -7,7 +6,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import BertConfig, BertTokenizer
 
-from utils import Statistics
+from agents.utils import Statistics
 from agents.trainer_base import BaseTrainer
 from agents.optim_schedule import ScheduledOptim, _get_optimizer
 from .data_utils import build_dataset, collate

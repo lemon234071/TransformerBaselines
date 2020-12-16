@@ -6,14 +6,14 @@ import collections
 logger = logging.getLogger(__file__)
 
 
-def get_datasets(dir_path):
+def get_datasets(dir_path, exclude_train=False):
     datasets = {}
     for file in os.listdir(dir_path):
         name = None
         for x in ["train", "valid", "dev", "test"]:
             if x in file:
                 name = x
-        if not name:
+        if not name or (name == "train" and exclude_train):
             continue
 
         path = os.path.join(dir_path, file)

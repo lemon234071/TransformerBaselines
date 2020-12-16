@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from transformers import T5Tokenizer, T5Config, T5ForConditionalGeneration
 from sklearn.metrics import precision_recall_fscore_support
 
-from utils import Statistics
+from agents.utils import Statistics
 from agents.trainer_base import BaseTrainer
 from agents.optim_schedule import ScheduledOptim, _get_optimizer
 from .data_utils import build_dataset, collate

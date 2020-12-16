@@ -11,7 +11,7 @@ from pprint import pformat
 import numpy as np
 import torch
 
-from utils import *
+from agents.utils import *
 
 # torch.backends.cudnn.enabled = True
 # torch.backends.cudnn.benchmark = True
@@ -47,10 +47,10 @@ parser.add_argument("--save_dir", type=str, default="checkpoint/")
 parser.add_argument('--save_name', type=str, default="")
 
 # training
-parser.add_argument('--epochs', default=100000, type=int)
-parser.add_argument('--early_stop', default=3, type=int)
+parser.add_argument('--epochs', required=True)
+parser.add_argument('--early_stop', default=-1, type=int)
 parser.add_argument('--mode', type=str, default="train")
-parser.add_argument('--lr_reduce_patience', default=1, type=int)
+parser.add_argument('--lr_reduce_patience', default=-1, type=int)
 parser.add_argument('--lr_decay', type=float, default=0.5)
 
 # infer
@@ -92,8 +92,9 @@ def main():
 
     if not os.path.exists("checkpoint"):
         os.mkdir("checkpoint")
-    best_checkpoint = opt.save_dir + opt.save_name + "_" + parsed.get('agent') + "_" + \
-                      opt.dataset_path.replace("/", "-").replace("\\", "-") + '_best_model'
+    best_checkpoint = opt.save_dir + opt.save_name + "_" + parsed.get('task') + "_" + parsed.get(
+        'agent') + '_best_model'
+    trainer.bes_checkpoint_path = best_checkpoint
 
     if opt.mode == "infer":
         if os.path.exists(best_checkpoint):
@@ -106,29 +107,14 @@ def main():
         if opt.result_path:
             save_json(result, opt.result_path)
     else:
-        best_metric = -10000
-        test_metric = -10000
-        patience = 0
         for e in range(opt.epochs):
             trainer.train_epoch(e)
-            val_metric = trainer.evaluate(e, "valid")
-            last_metric = val_metric
-            if best_metric < val_metric:
-                best_metric = val_metric
-                trainer.save(best_checkpoint)
-                test_metric = trainer.evaluate(e, "test")
-                logger.info('Best val metric {} at epoch {}'.format(abs(best_metric), e))
-                patience = 0
-            elif last_metric < val_metric:
-                logger.info('Better than last')
-            else:
-                patience += 1
-                if patience >= opt.lr_reduce_patience:
-                    trainer.optim_schedule.set_lr(trainer.optim_schedule.get_lr() * opt.lr_decay)
-                    logger.info("lr: {} ".format(trainer.optim_schedule.get_lr()) + "patience: {} ".format(patience))
-                if patience >= opt.early_stop:
-                    break
-        logger.info('Best test metric {}'.format(test_metric))
+            if trainer.patience >= opt.early_stop > 0:
+                break
+            trainer.evaluate(e, "valid")
+            if trainer.patience >= opt.early_stop > 0:
+                break
+        logger.info('Test performance {}'.format(trainer.test_performance))
 
 
 if __name__ == '__main__':
