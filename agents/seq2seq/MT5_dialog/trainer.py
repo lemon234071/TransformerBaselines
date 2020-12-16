@@ -63,7 +63,7 @@ class Trainer(BaseTrainer):
 
     def load_data(self, data_type, dataset, build_dataset, infer=False):
         if self.opt.dataset_cache and data_type == "train":
-            dataset_cache = self.opt.task + '_' + type(self.tokenizer).__name__
+            dataset_cache = self.opt.save_name + "_" + self.opt.task + '_' + type(self.tokenizer).__name__
             if os.path.isfile(dataset_cache):
                 logger.info("Load tokenized train dataset from cache at %s", dataset_cache)
                 dataset = torch.load(dataset_cache)
