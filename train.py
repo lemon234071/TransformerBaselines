@@ -47,7 +47,7 @@ parser.add_argument("--save_dir", type=str, default="checkpoint/")
 parser.add_argument('--save_name', type=str, default="")
 
 # training
-parser.add_argument('--epochs', required=True)
+parser.add_argument('--epochs', type=int, required=True)
 parser.add_argument('--early_stop', default=-1, type=int)
 parser.add_argument('--mode', type=str, default="train")
 parser.add_argument('--lr_reduce_patience', default=-1, type=int)
