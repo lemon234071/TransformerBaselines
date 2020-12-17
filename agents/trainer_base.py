@@ -67,7 +67,7 @@ class BaseTrainer(object):
         self.model.eval()
         valid_performance = self.iteration(epoch, self._dataloader[data_type], data_type=data_type)
         if data_type == "valid":
-            if valid_performance < self.best_performance:
+            if valid_performance > self.best_performance:
                 self.best_performance = valid_performance
                 self.save(self.best_checkpoint_path)
                 logger.info(
