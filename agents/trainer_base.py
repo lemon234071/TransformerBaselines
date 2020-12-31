@@ -28,7 +28,7 @@ class BaseTrainer(object):
                            help="Accumulate gradients on several steps")
         agent.add_argument("--max_grad_norm", type=float, default=1.0,
                            help="Clipping gradient norm")
-        agent.add_argument('--skip_report_eval_steps', default=0, type=int)
+        agent.add_argument('--skip_report_eval_steps', default=-1, type=int)
         agent.add_argument('--eval_every', default=-1, type=int)
         agent.add_argument('--report_every', default=-1, type=int)
 

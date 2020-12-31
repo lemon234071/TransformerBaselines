@@ -1,2 +1,1 @@
-CUDA_VISIBLE_DEVICES=0 python3 train.py --agent BERT_sl --dataset_path data/xiaowei/neg/ --dataset xiaowei_neg --gradient_accumulation_steps 2 2>&1 | tee -a BERT_sl_neg.log
-
+CUDA_VISIBLE_DEVICES=1 python3 train.py --save_name tscp-hyps-pkgct5-small_catslu-map --dataset_path data/catslu/hyps/map/ --task catslu.dual --agent seq2seq.PKGCT5 --batch_size 8 --learning_rate 1e-4 --early_stop 6 --gradient_accumulation_steps 8 --lr_reduce_patience 10000 --checkpoint checkpoint/tscp-ct5-small_catslu-map_seq2seq.MT5_dual_data-catslu-tscp-map-_best_model/ --skip_report_eval_steps 0 --graph_dir data/gcn_graph.ty_xj/ --epochs 10000 2>&1 | tee -a logdir/tscp-hyps-pkgct5-small_catslu-map.log
